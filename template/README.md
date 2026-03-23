@@ -1,6 +1,6 @@
 # __APP_NAME__
 
-Single-page website starter built with Vite, React, TypeScript, Tailwind CSS, Framer Motion, Lucide, and Firebase Hosting.
+Single-page website starter built with Vite, React, TypeScript, Tailwind CSS, Framer Motion, Lucide, and Cloudflare Pages.
 
 ## Scripts
 
@@ -9,13 +9,14 @@ Single-page website starter built with Vite, React, TypeScript, Tailwind CSS, Fr
 - `yarn build`
 - `yarn lint`
 - `yarn typecheck`
-- `yarn deploy:hosting --project "__FIREBASE_PROJECT_ID__"`
+- `yarn deploy:pages`
 
 ## Deploy
 
-This project is configured for Firebase Hosting with:
+This project is configured for Cloudflare Pages with:
 
-- Firebase project: `__FIREBASE_PROJECT_ID__`
-- GitHub Actions secret: `__FIREBASE_TOKEN_SECRET__`
+- Cloudflare Pages project: `__CLOUDFLARE_PROJECT_NAME__`
+- GitHub Actions secret: `__CLOUDFLARE_API_TOKEN_SECRET__`
+- GitHub Actions variable: `__CLOUDFLARE_ACCOUNT_ID_VAR__`
 
-After your first push to `main`, the deploy workflow can publish the site to Firebase Hosting as long as the required GitHub secret is present.
+After your first push to `main`, the deploy workflow can publish the site to Cloudflare Pages as long as the required GitHub secret and variable are present.

@@ -5,7 +5,6 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
-firebase-debug.log*
 
 node_modules
 .yarn
@@ -13,7 +12,7 @@ node_modules
 dist
 dist-ssr
 *.local
-.firebase
+.wrangler
 
 .vscode/*
 !.vscode/extensions.json

@@ -20,5 +20,8 @@ jobs:
         run: yarn install --immutable
       - name: Build website
         run: yarn build
-      - name: Deploy to Firebase Hosting
-        run: yarn deploy:hosting --project "__FIREBASE_PROJECT_ID__" --token "${{ secrets.__FIREBASE_TOKEN_SECRET__ }}"
+      - name: Deploy to Cloudflare Pages
+        run: yarn deploy:pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.__CLOUDFLARE_API_TOKEN_SECRET__ }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.__CLOUDFLARE_ACCOUNT_ID_VAR__ }}

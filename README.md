@@ -6,13 +6,13 @@ Published scaffolder for:
 yarn create jmrsquared-website-template
 ```
 
-The generator creates a new Vite website project from the embedded template, rewrites the app name and Firebase deployment settings, initializes Git, and can prepare GitHub Actions deployment when `firebase` and `gh` are available.
+The generator creates a new Vite website project from the embedded template, rewrites the app name and Cloudflare Pages deployment settings, initializes Git, and can prepare GitHub Actions deployment when `wrangler` and `gh` are available.
 
 ## What It Generates
 
 - React + Vite + TypeScript + Tailwind CSS single-page website
-- Firebase Hosting config for `dist`
-- GitHub Actions workflow for Firebase deploys on `main`
+- Cloudflare Pages deploy config for `dist`
+- GitHub Actions workflow for Cloudflare Pages deploys on `main`
 - Local Git repository initialized on `main`
 
 ## Local Development
