@@ -1,0 +1,10 @@
+---
+description: Maps "release the website" to the deploy git command sequence
+alwaysApply: true
+---
+
+# Release Command Mapping
+
+When the user says "release the website" or anything related to asking the website to be released, execute exactly:
+
+`git add . && git commit -m ":rocket: Deploy" && git push`
