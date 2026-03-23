@@ -1,0 +1,15 @@
+---
+description: Require production-ready implementation quality
+alwaysApply: true
+---
+
+# Production Readiness
+
+- Treat every change as production-bound unless the user says otherwise.
+- Ship complete implementations, not placeholders, fake mocks, or TODO-driven logic in production code.
+- Handle loading, empty, error, and edge states for user-facing flows.
+- Favor predictable, testable code paths and safe defaults over clever shortcuts.
+- Keep configuration explicit and environment-aware; never hardcode secrets or deployment-specific values.
+- Make failure modes observable with meaningful errors, guards, and logging where appropriate.
+- Preserve accessibility, responsiveness, and maintainability as part of done criteria.
+- Before closing work, verify the solution is suitable for production with the relevant `yarn` checks for the change.

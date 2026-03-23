@@ -1,0 +1,15 @@
+---
+description: Enforce domain-driven folder structure and core design principles
+alwaysApply: true
+---
+
+# Domain-Driven Architecture
+
+- Organize code by domain or feature first, not by technical layer alone.
+- Prefer folders such as `src/domains/<domain>/` or `src/features/<feature>/` with related UI, hooks, services, types, and tests colocated.
+- Keep shared or cross-domain code in explicit shared locations such as `src/shared/`, `src/lib/`, or `src/common/`.
+- Keep domain boundaries clear: UI should not own business rules, and reusable business logic should not live inside page or component files.
+- Use named exports for components. Do not use default exports for React components.
+- Follow SOLID principles in all new code: single responsibility, open/closed, Liskov substitution, interface segregation, and dependency inversion.
+- Follow DRY and clean code practices: avoid duplication, use clear names, keep functions small, and remove dead code.
+- Prefer composition over inheritance and extract reusable units only when the abstraction is justified by real usage.

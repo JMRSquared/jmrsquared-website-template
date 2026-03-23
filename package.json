@@ -1,0 +1,33 @@
+{
+  "name": "create-jmrsquared-website-template",
+  "version": "0.1.0",
+  "description": "Scaffold a Firebase-ready Vite website with Git and GitHub Actions deployment setup.",
+  "type": "module",
+  "packageManager": "yarn@4.13.0",
+  "scripts": {
+    "validate:package": "node ./scripts/ci/validate-package.mjs",
+    "prepare:github-package": "node ./scripts/ci/prepare-github-package.mjs"
+  },
+  "bin": "./bin/create.js",
+  "files": [
+    "bin",
+    "lib",
+    "scripts",
+    "template",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "create",
+    "firebase",
+    "vite",
+    "react",
+    "template"
+  ],
+  "license": "MIT"
+}

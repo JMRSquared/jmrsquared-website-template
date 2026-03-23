@@ -1,0 +1,120 @@
+name: Publish Package
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish_package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+          cache-dependency-path: yarn.lock
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Configure registry auth
+        run: |
+          cat <<EOF > "$HOME/.npmrc"
+          //registry.npmjs.org/:_authToken=${NPM_TOKEN}
+          //npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}
+          always-auth=true
+          EOF
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Validate root package
+        run: yarn validate:package
+
+      - name: Verify publish tarball
+        run: yarn pack --out "${RUNNER_TEMP}/npm-package.tgz"
+
+      - name: Capture package metadata
+        id: package
+        run: |
+          package_name=$(node -p "require('./package.json').name")
+          package_version=$(node -p "require('./package.json').version")
+          github_name=$(node -e "const pkg = require('./package.json'); const owner = (process.env.GITHUB_REPOSITORY_OWNER || '').toLowerCase(); process.stdout.write('@' + owner + '/' + pkg.name);")
+          echo "name=${package_name}" >> "$GITHUB_OUTPUT"
+          echo "version=${package_version}" >> "$GITHUB_OUTPUT"
+          echo "github_name=${github_name}" >> "$GITHUB_OUTPUT"
+        env:
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+
+      - name: Check npm version
+        id: npm_status
+        run: |
+          if [ -z "${NPM_TOKEN}" ]; then
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+            echo "reason=missing-token" >> "$GITHUB_OUTPUT"
+          elif npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" version --registry https://registry.npmjs.org/ >/dev/null 2>&1; then
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+            echo "reason=already-published" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+            echo "reason=publish" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          PACKAGE_NAME: ${{ steps.package.outputs.name }}
+          PACKAGE_VERSION: ${{ steps.package.outputs.version }}
+
+      - name: Publish to npm
+        if: steps.npm_status.outputs.should_publish == 'true'
+        run: npm publish --access public --registry https://registry.npmjs.org/
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Report npm publish status
+        if: steps.npm_status.outputs.should_publish != 'true'
+        run: echo "Skipping npm publish (${REASON})."
+        env:
+          REASON: ${{ steps.npm_status.outputs.reason }}
+
+      - name: Prepare GitHub Packages bundle
+        run: yarn prepare:github-package
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+
+      - name: Check GitHub Packages version
+        id: github_packages_status
+        run: |
+          if npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" version --registry https://npm.pkg.github.com/ >/dev/null 2>&1; then
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+            echo "reason=already-published" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+            echo "reason=publish" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PACKAGE_NAME: ${{ steps.package.outputs.github_name }}
+          PACKAGE_VERSION: ${{ steps.package.outputs.version }}
+
+      - name: Publish to GitHub Packages
+        if: steps.github_packages_status.outputs.should_publish == 'true'
+        run: npm publish ./.publish/github-package --registry https://npm.pkg.github.com/
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Report GitHub Packages publish status
+        if: steps.github_packages_status.outputs.should_publish != 'true'
+        run: echo "Skipping GitHub Packages publish (${REASON})."
+        env:
+          REASON: ${{ steps.github_packages_status.outputs.reason }}

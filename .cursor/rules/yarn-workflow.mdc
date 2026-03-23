@@ -1,0 +1,14 @@
+---
+description: Use Yarn for installs, scripts, and verification
+alwaysApply: true
+---
+
+# Yarn Workflow
+
+- Use `yarn` as the package manager for this project. Do not use `npm`, `pnpm`, or `bun`.
+- Install dependencies with `yarn install`.
+- Run the local website with `yarn dev`.
+- Validate production output with `yarn build` before considering work complete.
+- Use `yarn preview` to verify the built site locally when needed.
+- Run quality checks with `yarn lint` and `yarn typecheck` after meaningful changes.
+- When documenting setup or commands, always show the `yarn` version of the command.

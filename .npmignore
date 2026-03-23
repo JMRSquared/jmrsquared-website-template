@@ -1,0 +1,7 @@
+.publish
+node_modules
+.yarn
+.pnp.*
+dist
+dist-ssr
+.cursor

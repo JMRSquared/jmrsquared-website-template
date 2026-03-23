@@ -1,0 +1,63 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .section-eyebrow {
+    @apply text-sm font-semibold uppercase tracking-[0.25em] text-primary-600;
+  }
+
+  .section-title {
+    @apply mt-4 text-3xl font-semibold leading-tight text-slate-950 sm:text-4xl lg:text-5xl;
+  }
+
+  .section-copy {
+    @apply mt-5 text-base leading-8 text-slate-600;
+  }
+}
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  html {
+    overflow-x: hidden;
+    scroll-behavior: smooth;
+    background: #f8fafc;
+  }
+
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    overflow-x: hidden;
+    background:
+      radial-gradient(circle at top left, rgba(59, 130, 246, 0.08), transparent 28%),
+      linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+    color: #0f172a;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  ::selection {
+    background: rgba(59, 130, 246, 0.18);
+    color: #0f172a;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  button {
+    font: inherit;
+  }
+
+  img {
+    display: block;
+    max-width: 100%;
+  }
+}

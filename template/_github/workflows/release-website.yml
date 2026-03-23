@@ -1,0 +1,24 @@
+name: Deploy Website
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy_website:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+          cache-dependency-path: yarn.lock
+      - name: Enable Corepack
+        run: corepack enable
+      - name: Install dependencies
+        run: yarn install --immutable
+      - name: Build website
+        run: yarn build
+      - name: Deploy to Firebase Hosting
+        run: yarn deploy:hosting --project "__FIREBASE_PROJECT_ID__" --token "${{ secrets.__FIREBASE_TOKEN_SECRET__ }}"
