@@ -4,4 +4,4 @@ node_modules
 .pnp.*
 dist
 dist-ssr
-.cursor
+.claude
