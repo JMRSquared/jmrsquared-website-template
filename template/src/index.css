@@ -1,3 +1,5 @@
+@import './shared/tokens/theme.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -8,11 +10,11 @@
   }
 
   .section-title {
-    @apply mt-4 text-3xl font-semibold leading-tight text-slate-950 sm:text-4xl lg:text-5xl;
+    @apply mt-4 text-3xl font-semibold leading-tight text-neutral-950 sm:text-4xl lg:text-5xl;
   }
 
   .section-copy {
-    @apply mt-5 text-base leading-8 text-slate-600;
+    @apply mt-5 text-base leading-8 text-neutral-600;
   }
 }
 
@@ -24,16 +26,16 @@
   html {
     overflow-x: hidden;
     scroll-behavior: smooth;
-    background: #f8fafc;
+    background: var(--color-surface-muted);
   }
 
   body {
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: var(--font-body);
     overflow-x: hidden;
     background:
       radial-gradient(circle at top left, rgba(59, 130, 246, 0.08), transparent 28%),
-      linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
-    color: #0f172a;
+      linear-gradient(180deg, var(--color-surface) 0%, var(--color-surface-muted) 100%);
+    color: var(--color-text-primary);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }
@@ -44,7 +46,7 @@
 
   ::selection {
     background: rgba(59, 130, 246, 0.18);
-    color: #0f172a;
+    color: var(--color-text-primary);
   }
 
   a {
@@ -59,5 +61,10 @@
   img {
     display: block;
     max-width: 100%;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-primary-500);
+    outline-offset: 2px;
   }
 }
