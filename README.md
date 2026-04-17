@@ -6,21 +6,112 @@ Published scaffolder for:
 yarn create jmrsquared-website-template
 ```
 
-The generator creates a new Vite website project from the embedded template, rewrites the app name and Cloudflare Pages deployment settings, initializes Git, and can prepare GitHub Actions deployment when `wrangler` and `gh` are available.
+The generator creates a new Vite website project from the embedded template, rewrites app/deploy settings for Cloudflare Pages (default) or Firebase Hosting, initializes Git, and can prepare GitHub Actions deployment when required CLIs and `gh` are available.
 
 ## What It Generates
 
 - React + Vite + TypeScript + Tailwind CSS single-page website
-- Cloudflare Pages deploy config for `dist`
-- GitHub Actions workflow for Cloudflare Pages deploys on `main`
+- Cloudflare Pages or Firebase Hosting deploy config for `dist`
+- GitHub Actions workflow for provider-based deploys on `main`
 - Local Git repository initialized on `main`
 
-## Local Development
+## Requirements
 
 ```bash
-yarn install
-node ./bin/create.js
+node --version
+yarn --version
+gh --version
 ```
+
+- Node.js 22+
+- Yarn (Corepack-enabled Yarn is recommended)
+- GitHub CLI (`gh`) authenticated with `gh auth login`
+- Cloudflare CLI (`wrangler`) if you choose Cloudflare
+- Firebase CLI (`firebase`) if you choose Firebase
+
+## Create A Website Project
+
+Run:
+
+```bash
+yarn create jmrsquared-website-template
+```
+
+During scaffolding:
+
+1. Enter your project directory name.
+2. Enter your app name.
+3. Choose deploy provider:
+   - `cloudflare` (default)
+   - `firebase`
+4. Enter GitHub repository (`owner/repo`) when prompted.
+
+The scaffolder creates the app, installs dependencies, initializes git, optionally creates/pushes the GitHub repo, and configures secrets if matching env vars are already set locally.
+
+## Provider Setup
+
+### Cloudflare (Default)
+
+Required local environment variables before running the scaffolder:
+
+```bash
+export CLOUDFLARE_API_TOKEN="your_cloudflare_api_token"
+export CLOUDFLARE_ACCOUNT_ID="your_cloudflare_account_id"
+```
+
+How to get values:
+
+1. In Cloudflare dashboard, create an API token with Pages deploy permissions.
+2. Copy your Cloudflare account ID from the dashboard.
+3. Export both vars in your shell before running `yarn create jmrsquared-website-template`.
+
+What happens:
+
+- The scaffolder uses `wrangler` to resolve/create the Pages project.
+- If GitHub setup is enabled, it writes `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` to repo secrets.
+- Generated workflow deploys on push to `main`.
+
+### Firebase
+
+Required local environment variable before running the scaffolder:
+
+```bash
+export FIREBASE_TOKEN="your_firebase_cli_token"
+```
+
+How to get values:
+
+1. Generate a token from Firebase CLI on a machine where you are logged in:
+   ```bash
+   firebase login:ci
+   ```
+2. Copy the token output.
+3. Export it as `FIREBASE_TOKEN` before running `yarn create jmrsquared-website-template`.
+
+What happens:
+
+- The scaffolder creates a new Firebase project using the project name.
+- If the Firebase project already exists, scaffolding fails by design.
+- It writes Firebase hosting config (`firebase.json`, `.firebaserc`) in the generated app.
+- If GitHub setup is enabled, it writes `FIREBASE_TOKEN` to repo secrets.
+- Generated workflow deploys on push to `main`.
+
+## GitHub Actions Secrets (Manual Fallback)
+
+If secrets were not auto-set by the scaffolder, add them manually in:
+
+- GitHub repo -> Settings -> Secrets and variables -> Actions -> New repository secret
+
+Set based on provider:
+
+- Cloudflare: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`
+- Firebase: `FIREBASE_TOKEN`
+
+## Deployment Behavior
+
+- Every push to `main` in the generated project triggers `.github/workflows/release-website.yml`.
+- Workflow installs deps, builds the website, then runs `yarn deploy`.
+- `yarn deploy` is provider-specific in the generated app.
 
 ## Publishing
 

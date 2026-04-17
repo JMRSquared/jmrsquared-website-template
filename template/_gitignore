@@ -13,6 +13,7 @@ dist
 dist-ssr
 *.local
 .wrangler
+.firebase
 
 .vscode/*
 !.vscode/extensions.json

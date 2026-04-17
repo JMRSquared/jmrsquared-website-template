@@ -9,6 +9,6 @@ When the user says "release the website" or anything related to asking the websi
 
 `git add . && git commit -m ":rocket: Deploy" && git push`
 
-After the push succeeds, read the `name` from `package.json` and use it as the project id for the live website URL:
+After the push succeeds, use the configured provider URL from the generated project metadata:
 
-`https://<package-json-name>.pages.dev`
+`__SITE_URL__`

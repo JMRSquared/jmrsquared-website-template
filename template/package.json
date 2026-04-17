@@ -10,7 +10,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.app.json",
-    "deploy": "wrangler pages deploy dist --project-name \"__CLOUDFLARE_PROJECT_NAME__\" --branch main"
+    "deploy": "__DEPLOY_COMMAND__"
   },
   "dependencies": {
     "framer-motion": "^12.38.0",
@@ -33,6 +33,6 @@
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.57.1",
     "vite": "^8.0.1",
-    "wrangler": "^4"
+    "__DEPLOY_DEPENDENCY_NAME__": "__DEPLOY_DEPENDENCY_VERSION__"
   }
 }
