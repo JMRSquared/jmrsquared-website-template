@@ -2522,12 +2522,15 @@ cat > "$AGENTS_ROOT/agents/run-all.sh" <<'RUNALLEOF'
 #!/usr/bin/env bash
 # run-all.sh — spawn worker agent loops, then run boss interactively in this terminal.
 #
-# Usage: bash agents/run-all.sh [--mode tabs|background] [--no-boss]
+# Usage: bash agents/run-all.sh [--mode auto|splits|tabs|background] [--no-boss]
 #
 # Modes:
-#   tabs        Open a new terminal tab per worker (macOS Ghostty / iTerm2 /
-#               Terminal.app — auto-detected via TERM_PROGRAM). DEFAULT.
-#               Falls back to "background" if no supported terminal is detected.
+#   auto        DEFAULT. Splits the current Ghostty window into one pane per
+#               worker; opens tabs in iTerm2 / Terminal.app; falls back to
+#               background on other terminals.
+#   splits      Force Ghostty splits in the current window (Cmd+D + keystroke).
+#   tabs        Force one new tab per worker (macOS Ghostty / iTerm2 /
+#               Terminal.app).
 #   background  Run each worker as a backgrounded child of this script.
 #
 # Boss:
@@ -2539,17 +2542,19 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-MODE="tabs"
+MODE="auto"
 NO_BOSS=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --mode)        MODE="${2:-tabs}";        shift 2 ;;
+    --mode)        MODE="${2:-auto}";        shift 2 ;;
     --mode=*)      MODE="${1#--mode=}";     shift ;;
+    --auto)        MODE="auto";             shift ;;
+    --splits)      MODE="splits";           shift ;;
     --tabs)        MODE="tabs";             shift ;;
     --background)  MODE="background";       shift ;;
     --no-boss)     NO_BOSS=1;               shift ;;
     -h|--help)
-      sed -n '2,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+      sed -n '2,18p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
       exit 0 ;;
     *)
       echo "[run-all] unknown argument: $1" >&2
@@ -2629,6 +2634,62 @@ APPLESCRIPT
   echo "[run-all] opened iTerm2 tab for $name"
 }
 
+# Ghostty splits in the current window. Uses default Ghostty keybinds:
+#   Cmd+D       new_split:right
+#   Cmd+Opt+Left  goto_split:left
+# Requires Accessibility permission for the terminal running this script.
+_GHOSTTY_SPLIT_COUNT=0
+_spawn_split_ghostty() {
+  local name="$1"
+  local lane_dir="$ROOT/agents/$name"
+  local cmd="cd $(printf %q "$lane_dir") && exec bash run.sh"
+
+  local rc=0
+  /usr/bin/osascript - "$cmd" >/dev/null 2>&1 <<'APPLESCRIPT' || rc=$?
+on run argv
+  set theCmd to item 1 of argv
+  tell application "Ghostty" to activate
+  delay 0.2
+  tell application "System Events"
+    keystroke "d" using {command down}
+    delay 0.4
+    keystroke theCmd
+    delay 0.05
+    key code 36
+  end tell
+end run
+APPLESCRIPT
+
+  if [[ $rc -ne 0 ]]; then
+    echo "[run-all] Ghostty split failed for $name — grant Accessibility permission to your terminal" >&2
+    return 1
+  fi
+
+  _GHOSTTY_SPLIT_COUNT=$((_GHOSTTY_SPLIT_COUNT + 1))
+  echo "[run-all] split Ghostty pane for $name"
+  sleep 0.3
+}
+
+# After all splits, hop focus back to the original (leftmost) pane so the boss
+# exec lands where the user is looking.
+_refocus_first_pane_ghostty() {
+  local hops="$_GHOSTTY_SPLIT_COUNT"
+  if [[ "$hops" -le 0 ]]; then return 0; fi
+  /usr/bin/osascript - "$hops" >/dev/null 2>&1 <<'APPLESCRIPT' || true
+on run argv
+  set hops to (item 1 of argv) as integer
+  tell application "Ghostty" to activate
+  delay 0.15
+  tell application "System Events"
+    repeat hops times
+      key code 123 using {command down, option down}
+      delay 0.05
+    end repeat
+  end tell
+end run
+APPLESCRIPT
+}
+
 # Ghostty has no AppleScript dictionary. We drive tabs via System Events
 # (Cmd+T + keystroke). Falls through to a new Ghostty window if scripting
 # is blocked by missing Accessibility permission.
@@ -2688,32 +2749,55 @@ APPLESCRIPT
   echo "[run-all] opened Ghostty window for $name (set macOS 'Prefer tabs: Always' to group as tabs)"
 }
 
-# ── dispatch workers ────────────────────────────────────────────────────────
-if [[ "$MODE" == "tabs" ]]; then
+# ── resolve mode: auto → splits (ghostty) / tabs (iterm/terminal) / bg ──────
+TERM_KIND=""
+if [[ "$MODE" != "background" ]]; then
   TERM_KIND="$(_detect_terminal)"
   if [[ "$TERM_KIND" == "unsupported" ]]; then
-    echo "[run-all] tabs mode only supported on macOS — falling back to background." >&2
+    echo "[run-all] visual modes require macOS — falling back to background." >&2
     MODE="background"
   fi
 fi
 
-if [[ "$MODE" == "tabs" ]]; then
-  for lane in "${WORKERS[@]}"; do
-    case "$TERM_KIND" in
-      ghostty)  _spawn_tab_ghostty "$lane" ;;
-      iterm)    _spawn_tab_iterm "$lane" ;;
-      *)        _spawn_tab_terminal "$lane" ;;
-    esac
-  done
-elif [[ "$MODE" == "background" ]]; then
-  trap _cleanup_bg EXIT INT TERM HUP
-  for lane in "${WORKERS[@]}"; do
-    _spawn_background "$lane"
-  done
-else
-  echo "[run-all] unknown mode: $MODE (expected tabs|background)" >&2
-  exit 1
+if [[ "$MODE" == "auto" ]]; then
+  case "$TERM_KIND" in
+    ghostty)  MODE="splits" ;;
+    *)        MODE="tabs" ;;
+  esac
 fi
+
+if [[ "$MODE" == "splits" && "$TERM_KIND" != "ghostty" ]]; then
+  echo "[run-all] --mode splits requires Ghostty — falling back to tabs." >&2
+  MODE="tabs"
+fi
+
+# ── dispatch workers ────────────────────────────────────────────────────────
+case "$MODE" in
+  splits)
+    for lane in "${WORKERS[@]}"; do
+      _spawn_split_ghostty "$lane"
+    done
+    _refocus_first_pane_ghostty
+    ;;
+  tabs)
+    for lane in "${WORKERS[@]}"; do
+      case "$TERM_KIND" in
+        ghostty)  _spawn_tab_ghostty "$lane" ;;
+        iterm)    _spawn_tab_iterm "$lane" ;;
+        *)        _spawn_tab_terminal "$lane" ;;
+      esac
+    done
+    ;;
+  background)
+    trap _cleanup_bg EXIT INT TERM HUP
+    for lane in "${WORKERS[@]}"; do
+      _spawn_background "$lane"
+    done
+    ;;
+  *)
+    echo "[run-all] unknown mode: $MODE (expected auto|splits|tabs|background)" >&2
+    exit 1 ;;
+esac
 
 # ── boss in current terminal ────────────────────────────────────────────────
 if [[ "$NO_BOSS" == "1" ]]; then
@@ -2721,7 +2805,7 @@ if [[ "$NO_BOSS" == "1" ]]; then
     echo "[run-all] ${#PIDS[@]} worker(s) running in background. Ctrl+C to stop."
     wait
   else
-    echo "[run-all] workers launched in tabs. This script exits; close tabs manually to stop."
+    echo "[run-all] workers launched in $MODE. This script exits; close panes/tabs manually to stop."
   fi
   exit 0
 fi
@@ -2984,12 +3068,14 @@ echo ""
 echo "  # Start database services"
 echo "  docker compose up -d"
 echo ""
-echo "  # Default: one terminal tab per worker (macOS Ghostty / iTerm2 / Terminal.app)"
-echo "  # + boss interactive in this terminal. First run on macOS prompts for"
-echo "  # Accessibility permission so we can drive Cmd+T in your terminal."
+echo "  # Default (auto): Ghostty splits the current window into one pane per"
+echo "  # worker; iTerm2 / Terminal.app get tabs. Boss runs interactive in the"
+echo "  # original pane/tab. First run prompts for macOS Accessibility permission."
 echo "  bash agents/run-all.sh"
-echo "  # Or run workers as background processes of this script:"
-echo "  bash agents/run-all.sh --mode background"
+echo "  # Force a specific layout:"
+echo "  bash agents/run-all.sh --mode splits      # Ghostty splits only"
+echo "  bash agents/run-all.sh --mode tabs        # new tab per worker"
+echo "  bash agents/run-all.sh --mode background  # background child processes"
 echo ""
 echo "  # Or start the dev server"
 echo "  $PKG_MANAGER dev"
