@@ -2237,15 +2237,16 @@ for _agent in ["boss", "manager", "product-owner", "dev-1", "dev-2", "dev-3", "q
 
 PYEOF
 
-# ── Write run.sh for each agent (single canonical pi-based loop) ──────────────
+# ── Write run.sh for each agent (pi CLI: boss interactive, workers -p loop) ──
 for AGENT in "${AGENT_LIST[@]}"; do
   cat > "${AGENTS_ROOT}/agents/$AGENT/run.sh" << 'RUNEOF'
 #!/usr/bin/env bash
 export PATH="${HOME}/.local/bin:${HOME}/.cursor/bin:/opt/homebrew/bin:/usr/local/bin:${PATH}"
 
 cd "$(dirname "$0")"
+LANE_DIR="$(pwd)"
 ROOT_DIR="$(cd ../.. && pwd)"
-_AGENT="$(basename "$(pwd)")"
+_AGENT="$(basename "$LANE_DIR")"
 
 _resolve_cli() {
   if command -v pi >/dev/null 2>&1; then
@@ -2257,15 +2258,31 @@ _resolve_cli() {
 }
 
 PI_BIN="$(_resolve_cli)" || exit 127
-_PROMPT="$(cat prompt.txt)"
+_PROMPT_FILE="$LANE_DIR/prompt.txt"
+_SYSTEM_PROMPT="$(cat "$_PROMPT_FILE")"
 
+cd "$ROOT_DIR"
+
+# Boss: interactive — single attached pi session, no -p, no loop.
+if [[ "$_AGENT" == "boss" ]]; then
+  echo "[pi-agent][boss] launching interactive session in $ROOT_DIR"
+  exec "$PI_BIN" \
+    --append-system-prompt "$_SYSTEM_PROMPT" \
+    --session "boss"
+fi
+
+# Workers: non-interactive patrol loop.
 echo "[pi-agent][$_AGENT] starting staged 10s..."
 sleep 10
 
 _LOOP="${PI_AGENT_LOOP_SLEEP:-45}"
 while true; do
   echo "[pi-agent][$_AGENT] patrol $(date -u +"%Y-%m-%dT%H:%M:%SZ")..."
-  "$PI_BIN" agent run "$_AGENT" --workspace "$ROOT_DIR" "$_PROMPT" || true
+  "$PI_BIN" \
+    -p \
+    --append-system-prompt "$_SYSTEM_PROMPT" \
+    --session "$_AGENT" \
+    "patrol your lane: pick up any work assigned to $_AGENT, follow your AGENTS.md workflow, then exit." || true
   echo "[pi-agent][$_AGENT] sleeping ${_LOOP}s (override with env PI_AGENT_LOOP_SLEEP)"
   sleep "$_LOOP"
 done
