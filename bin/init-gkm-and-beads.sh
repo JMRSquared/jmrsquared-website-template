@@ -2526,9 +2526,9 @@ cat > "$AGENTS_ROOT/agents/run-all.sh" <<'RUNALLEOF'
 #
 # Modes:
 #   tabs        Open a new terminal tab per worker (macOS Ghostty / iTerm2 /
-#               Terminal.app — auto-detected via TERM_PROGRAM).
+#               Terminal.app — auto-detected via TERM_PROGRAM). DEFAULT.
 #               Falls back to "background" if no supported terminal is detected.
-#   background  Run each worker as a backgrounded child of this script (default).
+#   background  Run each worker as a backgrounded child of this script.
 #
 # Boss:
 #   By default boss runs in the foreground of THIS terminal so the developer can
@@ -2539,11 +2539,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-MODE="background"
+MODE="tabs"
 NO_BOSS=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --mode)        MODE="${2:-background}"; shift 2 ;;
+    --mode)        MODE="${2:-tabs}";        shift 2 ;;
     --mode=*)      MODE="${1#--mode=}";     shift ;;
     --tabs)        MODE="tabs";             shift ;;
     --background)  MODE="background";       shift ;;
@@ -2629,40 +2629,58 @@ APPLESCRIPT
   echo "[run-all] opened iTerm2 tab for $name"
 }
 
-# Ghostty has no AppleScript surface, but it ships a "+new-tab" IPC subcommand
-# (when run from inside an existing Ghostty session) and accepts --command /
-# --working-directory at launch time. We try IPC first (real tab), then fall
-# back to System Events Cmd+T + keystroke, then to a new Ghostty window.
+# Ghostty has no AppleScript dictionary. We drive tabs via System Events
+# (Cmd+T + keystroke). Falls through to a new Ghostty window if scripting
+# is blocked by missing Accessibility permission.
+_GHOSTTY_ACTIVATED=0
 _spawn_tab_ghostty() {
   local name="$1"
   local lane_dir="$ROOT/agents/$name"
-  local cmd="cd '$lane_dir' && exec bash run.sh"
+  local cmd="cd $(printf %q "$lane_dir") && exec bash run.sh"
 
-  if command -v ghostty >/dev/null 2>&1; then
-    if ghostty +new-tab --working-directory="$lane_dir" --command="bash run.sh" >/dev/null 2>&1; then
-      echo "[run-all] opened Ghostty tab (IPC) for $name"
-      return
-    fi
-  fi
-
-  # Fallback: drive Ghostty via System Events (requires Accessibility permission).
-  if /usr/bin/osascript <<APPLESCRIPT >/dev/null 2>&1
-tell application "Ghostty" to activate
-delay 0.15
-tell application "System Events"
-  keystroke "t" using {command down}
-  delay 0.25
-  keystroke "$cmd"
-  key code 36
-end tell
+  local rc=0
+  if [[ "$_GHOSTTY_ACTIVATED" == "0" ]]; then
+    /usr/bin/osascript - "$cmd" >/dev/null 2>&1 <<'APPLESCRIPT' || rc=$?
+on run argv
+  set theCmd to item 1 of argv
+  tell application "Ghostty" to activate
+  delay 0.4
+  tell application "System Events"
+    keystroke "t" using {command down}
+    delay 0.4
+    keystroke theCmd
+    delay 0.05
+    key code 36
+  end tell
+end run
 APPLESCRIPT
-  then
-    echo "[run-all] opened Ghostty tab (System Events) for $name"
-    return
+    _GHOSTTY_ACTIVATED=1
+  else
+    /usr/bin/osascript - "$cmd" >/dev/null 2>&1 <<'APPLESCRIPT' || rc=$?
+on run argv
+  set theCmd to item 1 of argv
+  tell application "Ghostty" to activate
+  delay 0.2
+  tell application "System Events"
+    keystroke "t" using {command down}
+    delay 0.4
+    keystroke theCmd
+    delay 0.05
+    key code 36
+  end tell
+end run
+APPLESCRIPT
   fi
 
-  # Last resort: spawn a new Ghostty window via `open`. macOS will group as a
-  # tab if "System Settings → Desktop & Dock → Prefer tabs: Always" is set.
+  if [[ $rc -eq 0 ]]; then
+    echo "[run-all] opened Ghostty tab for $name"
+    sleep 0.3
+    return 0
+  fi
+
+  echo "[run-all] System Events scripting blocked for Ghostty — falling back to new window." >&2
+  echo "[run-all]   grant Accessibility permission in System Settings → Privacy & Security → Accessibility" >&2
+
   open -na "Ghostty" --args --working-directory="$lane_dir" --command="bash run.sh" >/dev/null 2>&1 || {
     echo "[run-all] failed to launch Ghostty for $name — install Ghostty or use --mode background" >&2
     return 1
@@ -2966,10 +2984,12 @@ echo ""
 echo "  # Start database services"
 echo "  docker compose up -d"
 echo ""
-echo "  # Run worker agents in background + boss interactive in this terminal"
+echo "  # Default: one terminal tab per worker (macOS Ghostty / iTerm2 / Terminal.app)"
+echo "  # + boss interactive in this terminal. First run on macOS prompts for"
+echo "  # Accessibility permission so we can drive Cmd+T in your terminal."
 echo "  bash agents/run-all.sh"
-echo "  # Or open one terminal tab per worker (macOS Ghostty / iTerm2 / Terminal.app)"
-echo "  bash agents/run-all.sh --mode tabs"
+echo "  # Or run workers as background processes of this script:"
+echo "  bash agents/run-all.sh --mode background"
 echo ""
 echo "  # Or start the dev server"
 echo "  $PKG_MANAGER dev"
