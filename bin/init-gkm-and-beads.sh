@@ -2263,15 +2263,26 @@ _SYSTEM_PROMPT="$(cat "$_PROMPT_FILE")"
 
 cd "$ROOT_DIR"
 
+# Per-lane session storage (boss persistent, workers ephemeral).
+_SESSION_DIR="$LANE_DIR/.pi-sessions"
+mkdir -p "$_SESSION_DIR"
+
 # Boss: interactive — single attached pi session, no -p, no loop.
+# --continue resumes the most recent boss session if one exists; otherwise pi
+# starts a fresh session and writes it to $_SESSION_DIR.
 if [[ "$_AGENT" == "boss" ]]; then
   echo "[pi-agent][boss] launching interactive session in $ROOT_DIR"
-  exec "$PI_BIN" \
-    --append-system-prompt "$_SYSTEM_PROMPT" \
-    --session "boss"
+  _BOSS_ARGS=(
+    --append-system-prompt "$_SYSTEM_PROMPT"
+    --session-dir "$_SESSION_DIR"
+  )
+  if compgen -G "$_SESSION_DIR/*.json" >/dev/null; then
+    _BOSS_ARGS+=(--continue)
+  fi
+  exec "$PI_BIN" "${_BOSS_ARGS[@]}"
 fi
 
-# Workers: non-interactive patrol loop.
+# Workers: non-interactive patrol loop with ephemeral sessions.
 echo "[pi-agent][$_AGENT] starting staged 10s..."
 sleep 10
 
@@ -2280,8 +2291,8 @@ while true; do
   echo "[pi-agent][$_AGENT] patrol $(date -u +"%Y-%m-%dT%H:%M:%SZ")..."
   "$PI_BIN" \
     -p \
+    --no-session \
     --append-system-prompt "$_SYSTEM_PROMPT" \
-    --session "$_AGENT" \
     "patrol your lane: pick up any work assigned to $_AGENT, follow your AGENTS.md workflow, then exit." || true
   echo "[pi-agent][$_AGENT] sleeping ${_LOOP}s (override with env PI_AGENT_LOOP_SLEEP)"
   sleep "$_LOOP"
