@@ -2525,7 +2525,8 @@ cat > "$AGENTS_ROOT/agents/run-all.sh" <<'RUNALLEOF'
 # Usage: bash agents/run-all.sh [--mode tabs|background] [--no-boss]
 #
 # Modes:
-#   tabs        Open a new terminal tab per worker (macOS Terminal.app or iTerm2).
+#   tabs        Open a new terminal tab per worker (macOS Ghostty / iTerm2 /
+#               Terminal.app — auto-detected via TERM_PROGRAM).
 #               Falls back to "background" if no supported terminal is detected.
 #   background  Run each worker as a backgrounded child of this script (default).
 #
@@ -2548,7 +2549,7 @@ while [[ $# -gt 0 ]]; do
     --background)  MODE="background";       shift ;;
     --no-boss)     NO_BOSS=1;               shift ;;
     -h|--help)
-      sed -n '2,14p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+      sed -n '2,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
       exit 0 ;;
     *)
       echo "[run-all] unknown argument: $1" >&2
@@ -2582,22 +2583,28 @@ _spawn_background() {
   echo "[run-all] started $name in background (pid $pid)"
 }
 
-# ── tabs mode (macOS Terminal.app / iTerm2) ─────────────────────────────────
+# ── tabs mode (macOS Terminal.app / iTerm2 / Ghostty) ───────────────────────
 _detect_terminal() {
   if [[ "$(uname -s)" != "Darwin" ]]; then
     echo "unsupported"
     return
   fi
   case "${TERM_PROGRAM:-}" in
-    iTerm.app)   echo "iterm" ;;
-    Apple_Terminal) echo "terminal" ;;
-    *) echo "terminal" ;;  # default to Terminal.app on macOS
+    ghostty|Ghostty) echo "ghostty" ;;
+    iTerm.app)       echo "iterm" ;;
+    Apple_Terminal)  echo "terminal" ;;
+    *)
+      # Probe for Ghostty.app even when TERM_PROGRAM is unset (e.g. tmux/zellij).
+      if [[ -d "/Applications/Ghostty.app" ]] || command -v ghostty >/dev/null 2>&1; then
+        echo "ghostty"
+      else
+        echo "terminal"
+      fi ;;
   esac
 }
 
 _spawn_tab_terminal() {
   local name="$1"
-  local script_path="$ROOT/agents/$name/run.sh"
   /usr/bin/osascript <<APPLESCRIPT >/dev/null
 tell application "Terminal"
   activate
@@ -2622,6 +2629,47 @@ APPLESCRIPT
   echo "[run-all] opened iTerm2 tab for $name"
 }
 
+# Ghostty has no AppleScript surface, but it ships a "+new-tab" IPC subcommand
+# (when run from inside an existing Ghostty session) and accepts --command /
+# --working-directory at launch time. We try IPC first (real tab), then fall
+# back to System Events Cmd+T + keystroke, then to a new Ghostty window.
+_spawn_tab_ghostty() {
+  local name="$1"
+  local lane_dir="$ROOT/agents/$name"
+  local cmd="cd '$lane_dir' && exec bash run.sh"
+
+  if command -v ghostty >/dev/null 2>&1; then
+    if ghostty +new-tab --working-directory="$lane_dir" --command="bash run.sh" >/dev/null 2>&1; then
+      echo "[run-all] opened Ghostty tab (IPC) for $name"
+      return
+    fi
+  fi
+
+  # Fallback: drive Ghostty via System Events (requires Accessibility permission).
+  if /usr/bin/osascript <<APPLESCRIPT >/dev/null 2>&1
+tell application "Ghostty" to activate
+delay 0.15
+tell application "System Events"
+  keystroke "t" using {command down}
+  delay 0.25
+  keystroke "$cmd"
+  key code 36
+end tell
+APPLESCRIPT
+  then
+    echo "[run-all] opened Ghostty tab (System Events) for $name"
+    return
+  fi
+
+  # Last resort: spawn a new Ghostty window via `open`. macOS will group as a
+  # tab if "System Settings → Desktop & Dock → Prefer tabs: Always" is set.
+  open -na "Ghostty" --args --working-directory="$lane_dir" --command="bash run.sh" >/dev/null 2>&1 || {
+    echo "[run-all] failed to launch Ghostty for $name — install Ghostty or use --mode background" >&2
+    return 1
+  }
+  echo "[run-all] opened Ghostty window for $name (set macOS 'Prefer tabs: Always' to group as tabs)"
+}
+
 # ── dispatch workers ────────────────────────────────────────────────────────
 if [[ "$MODE" == "tabs" ]]; then
   TERM_KIND="$(_detect_terminal)"
@@ -2633,11 +2681,11 @@ fi
 
 if [[ "$MODE" == "tabs" ]]; then
   for lane in "${WORKERS[@]}"; do
-    if [[ "$TERM_KIND" == "iterm" ]]; then
-      _spawn_tab_iterm "$lane"
-    else
-      _spawn_tab_terminal "$lane"
-    fi
+    case "$TERM_KIND" in
+      ghostty)  _spawn_tab_ghostty "$lane" ;;
+      iterm)    _spawn_tab_iterm "$lane" ;;
+      *)        _spawn_tab_terminal "$lane" ;;
+    esac
   done
 elif [[ "$MODE" == "background" ]]; then
   trap _cleanup_bg EXIT INT TERM HUP
@@ -2920,7 +2968,7 @@ echo "  docker compose up -d"
 echo ""
 echo "  # Run worker agents in background + boss interactive in this terminal"
 echo "  bash agents/run-all.sh"
-echo "  # Or open one terminal tab per worker (macOS Terminal.app / iTerm2)"
+echo "  # Or open one terminal tab per worker (macOS Ghostty / iTerm2 / Terminal.app)"
 echo "  bash agents/run-all.sh --mode tabs"
 echo ""
 echo "  # Or start the dev server"
