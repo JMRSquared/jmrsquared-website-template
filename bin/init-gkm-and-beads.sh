@@ -7,17 +7,17 @@
 #                             [--mailer console|mailpit]
 #                             [--logger pino|console]
 #                             [--pkg-manager pnpm|npm|yarn|bun]
-#                             [--provider claude|codex|cursor|cursor-provider]
+#                             [--provider claude|codex|cursor|cursor-provider|pi]
 #                             [--vsc] [--warp] [--skip-install]
 #
 # This script scaffolds a new monorepo wired for @geekmidas/toolbox runtime
 # (apps/api + apps/web|app + packages/*), then installs beads + pi agents,
 # repo-local skills from technanimals/geekmidas-skills, and per-provider
-# (claude/codex/cursor) agent config.
+# (claude/codex/cursor/pi) agent config.
 #
 # Prerequisites:
 #   npm/pnpm/yarn/bun + Docker running for PostgreSQL/Redis/Mailpit.
-#   For --provider claude/codex/cursor — the respective CLI must be installed.
+#   For --provider claude/codex/cursor/pi — the respective CLI must be installed.
 #
 # Make globally available:
 #   cp init-gkm-and-beads.sh ~/.local/bin/init-gkm-and-beads && chmod +x ~/.local/bin/init-gkm-and-beads
@@ -32,7 +32,7 @@ CACHE="true"
 MAILER="console"           # console | mailpit
 LOGGER="pino"              # pino | console
 PKG_MANAGER="pnpm"         # pnpm | npm | yarn | bun
-PROVIDER=""                # claude | codex | cursor | cursor-provider
+PROVIDER=""                # claude | codex | cursor | cursor-provider | pi
 VSC=false
 WARP=false
 SKIP_INSTALL=false
@@ -63,7 +63,7 @@ Options:
   --mailer       console (default) | mailpit
   --logger       pino (default) | console
   --pkg-manager  pnpm (default) | npm | yarn | bun
-  --provider     claude | codex | cursor | cursor-provider
+  --provider     claude | codex | cursor | cursor-provider | pi
   --vsc          Generate .vscode/tasks.json
   --warp         Generate Warp launch configuration
   --skip-install Skip dependency installation (for CI)
@@ -2489,38 +2489,61 @@ exit 0
 MERGE_EOF
 chmod +x "$AGENTS_ROOT/agents/lib/merge-and-close.sh"
 
-# Write run-all.sh (bash background pattern; boss opt-in via --with-boss)
+# Write run-all.sh — workers in tabs or background; boss foreground in current terminal
 cat > "$AGENTS_ROOT/agents/run-all.sh" <<'RUNALLEOF'
 #!/usr/bin/env bash
-# run-all.sh — launch agent loops as background processes.
-# Usage: bash agents/run-all.sh [--with-boss]
-#   Boss is interactive (chats with developer); included only when explicitly opted in
-#   via --with-boss or env RUN_ALL_AGENTS_WITH_BOSS=1.
+# run-all.sh — spawn worker agent loops, then run boss interactively in this terminal.
+#
+# Usage: bash agents/run-all.sh [--mode tabs|background] [--no-boss]
+#
+# Modes:
+#   tabs        Open a new terminal tab per worker (macOS Terminal.app or iTerm2).
+#               Falls back to "background" if no supported terminal is detected.
+#   background  Run each worker as a backgrounded child of this script (default).
+#
+# Boss:
+#   By default boss runs in the foreground of THIS terminal so the developer can
+#   chat with it. Pass --no-boss (or set RUN_ALL_AGENTS_NO_BOSS=1) to skip boss
+#   entirely — useful when only the worker swarm is needed.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-PIDS=()
-_cleanup() {
-  local pid
-  for pid in "${PIDS[@]}"; do
-    kill "$pid" 2>/dev/null || true
-  done
-}
-trap _cleanup EXIT INT TERM HUP
-
-WITH_BOSS=0
-for arg in "$@"; do
-  if [[ "$arg" == "--with-boss" ]]; then
-    WITH_BOSS=1
-  fi
+MODE="background"
+NO_BOSS=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --mode)        MODE="${2:-background}"; shift 2 ;;
+    --mode=*)      MODE="${1#--mode=}";     shift ;;
+    --tabs)        MODE="tabs";             shift ;;
+    --background)  MODE="background";       shift ;;
+    --no-boss)     NO_BOSS=1;               shift ;;
+    -h|--help)
+      sed -n '2,14p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+      exit 0 ;;
+    *)
+      echo "[run-all] unknown argument: $1" >&2
+      exit 1 ;;
+  esac
 done
-if [[ "${RUN_ALL_AGENTS_WITH_BOSS:-}" == "1" ]]; then
-  WITH_BOSS=1
+
+if [[ "${RUN_ALL_AGENTS_NO_BOSS:-}" == "1" ]]; then
+  NO_BOSS=1
 fi
 
-_run_lane() {
+WORKERS=(dev-1 dev-2 dev-3 manager product-owner qa tester)
+
+# ── background mode ─────────────────────────────────────────────────────────
+PIDS=()
+_cleanup_bg() {
+  local pid
+  for pid in "${PIDS[@]:-}"; do
+    [[ -n "$pid" ]] && kill "$pid" 2>/dev/null || true
+  done
+}
+
+_spawn_background() {
   local name="$1"
   (
     cd "$ROOT/agents/$name"
@@ -2528,19 +2551,93 @@ _run_lane() {
   ) &
   local pid=$!
   PIDS+=("$pid")
-  echo "[run-all] started $name (pid $pid)"
+  echo "[run-all] started $name in background (pid $pid)"
 }
 
-for lane in dev-1 dev-2 dev-3 manager product-owner qa tester; do
-  _run_lane "$lane"
-done
+# ── tabs mode (macOS Terminal.app / iTerm2) ─────────────────────────────────
+_detect_terminal() {
+  if [[ "$(uname -s)" != "Darwin" ]]; then
+    echo "unsupported"
+    return
+  fi
+  case "${TERM_PROGRAM:-}" in
+    iTerm.app)   echo "iterm" ;;
+    Apple_Terminal) echo "terminal" ;;
+    *) echo "terminal" ;;  # default to Terminal.app on macOS
+  esac
+}
 
-if [[ "$WITH_BOSS" == "1" ]]; then
-  _run_lane boss
+_spawn_tab_terminal() {
+  local name="$1"
+  local script_path="$ROOT/agents/$name/run.sh"
+  /usr/bin/osascript <<APPLESCRIPT >/dev/null
+tell application "Terminal"
+  activate
+  do script "cd '$ROOT/agents/$name' && exec bash run.sh"
+end tell
+APPLESCRIPT
+  echo "[run-all] opened Terminal.app tab for $name"
+}
+
+_spawn_tab_iterm() {
+  local name="$1"
+  /usr/bin/osascript <<APPLESCRIPT >/dev/null
+tell application "iTerm"
+  tell current window
+    set newTab to (create tab with default profile)
+    tell current session of newTab
+      write text "cd '$ROOT/agents/$name' && exec bash run.sh"
+    end tell
+  end tell
+end tell
+APPLESCRIPT
+  echo "[run-all] opened iTerm2 tab for $name"
+}
+
+# ── dispatch workers ────────────────────────────────────────────────────────
+if [[ "$MODE" == "tabs" ]]; then
+  TERM_KIND="$(_detect_terminal)"
+  if [[ "$TERM_KIND" == "unsupported" ]]; then
+    echo "[run-all] tabs mode only supported on macOS — falling back to background." >&2
+    MODE="background"
+  fi
 fi
 
-echo "[run-all] ${#PIDS[@]} agent loop(s) running — Ctrl+C stops this script and sends SIGTERM to those pids."
-wait
+if [[ "$MODE" == "tabs" ]]; then
+  for lane in "${WORKERS[@]}"; do
+    if [[ "$TERM_KIND" == "iterm" ]]; then
+      _spawn_tab_iterm "$lane"
+    else
+      _spawn_tab_terminal "$lane"
+    fi
+  done
+elif [[ "$MODE" == "background" ]]; then
+  trap _cleanup_bg EXIT INT TERM HUP
+  for lane in "${WORKERS[@]}"; do
+    _spawn_background "$lane"
+  done
+else
+  echo "[run-all] unknown mode: $MODE (expected tabs|background)" >&2
+  exit 1
+fi
+
+# ── boss in current terminal ────────────────────────────────────────────────
+if [[ "$NO_BOSS" == "1" ]]; then
+  if [[ "$MODE" == "background" ]]; then
+    echo "[run-all] ${#PIDS[@]} worker(s) running in background. Ctrl+C to stop."
+    wait
+  else
+    echo "[run-all] workers launched in tabs. This script exits; close tabs manually to stop."
+  fi
+  exit 0
+fi
+
+echo "[run-all] launching boss in this terminal — Ctrl+C exits boss."
+if [[ "$MODE" == "background" ]]; then
+  echo "[run-all] background workers will be terminated when boss exits."
+fi
+cd "$ROOT/agents/boss"
+exec bash run.sh
 RUNALLEOF
 chmod +x "$AGENTS_ROOT/agents/run-all.sh"
 
@@ -2644,6 +2741,38 @@ Run \`bd prime\` at the start of every session. Package manager: \`$PKG_MANAGER\
 Verification gate: \`$PKG_MANAGER build && $PKG_MANAGER test && $PKG_MANAGER lint:fix\`.
 PROVIDER_EOF
       echo "  ✓ .cursor/rules/agents.mdc"
+      ;;
+    pi)
+      mkdir -p "$AGENTS_ROOT/.pi"
+      cat > "$AGENTS_ROOT/.pi/PI.md" <<PROVIDER_EOF
+# $PROJECT_NAME — pi-agent-cli workspace
+
+Read \`agents/SKILLS.md\` FIRST every session — it lists every repo-local skill
+under \`.agents/skills/\` and the lane each one applies to.
+
+For any session in this repo, your operating contract is the union of:
+
+1. \`agents/<your-lane>/AGENTS.md\` — your role and workflow (loaded as the prompt
+   by \`pi agent run <lane>\`).
+2. \`.agents/skills/<id>/SKILL.md\` — every skill triggered by the bead's
+   \`impacted_surfaces\` metadata (read BEFORE any substantive action).
+3. \`agents/SKILLS.md\` — the always-on skill list per lane.
+
+Always run \`bd prime\` at the start of every session.
+
+Package manager: \`$PKG_MANAGER\`. Verification gate: \`$PKG_MANAGER build && $PKG_MANAGER test && $PKG_MANAGER lint:fix\`.
+
+## Lane invocation
+
+\`\`\`bash
+pi agent run <lane> --workspace "\$ROOT_DIR" "\$(cat agents/<lane>/prompt.txt)"
+\`\`\`
+
+The canonical loop wrapper lives at \`agents/<lane>/run.sh\`. Launch the full
+swarm with \`bash agents/run-all.sh\` (boss interactive in current terminal;
+workers in background or \`--mode tabs\`).
+PROVIDER_EOF
+      echo "  ✓ .pi/PI.md"
       ;;
     *)
       echo "  warning: unknown --provider '$PROVIDER' — skipping provider config"
@@ -2761,8 +2890,10 @@ echo ""
 echo "  # Start database services"
 echo "  docker compose up -d"
 echo ""
-echo "  # Run all agents (boss opt-in; add --with-boss to also launch chat)"
+echo "  # Run worker agents in background + boss interactive in this terminal"
 echo "  bash agents/run-all.sh"
+echo "  # Or open one terminal tab per worker (macOS Terminal.app / iTerm2)"
+echo "  bash agents/run-all.sh --mode tabs"
 echo ""
 echo "  # Or start the dev server"
 echo "  $PKG_MANAGER dev"
