@@ -48,6 +48,34 @@ During scaffolding:
 
 The scaffolder creates the app, installs dependencies, initializes git, optionally creates/pushes the GitHub repo, and configures secrets if matching env vars are already set locally.
 
+## Alternative: Full-Stack Monorepo Template
+
+Skip the default Vite + Cloudflare/Firebase flow and scaffold a `@geekmidas/toolbox` monorepo (apps/api + apps/web|app + packages/*) with beads + pi agents instead:
+
+```bash
+yarn create jmrsquared-website-template --template full --name my-app
+```
+
+All flags after `--template full` are forwarded to `bin/init-gkm-and-beads.sh`. Run with `--help` for the full option list:
+
+```bash
+yarn create jmrsquared-website-template --template full --help
+```
+
+Common flags:
+
+- `--name <project-name>` (required, npm-safe)
+- `--frontend nextjs|tanstack-start|expo`
+- `--db true|false`
+- `--cache true|false`
+- `--mailer console|mailpit`
+- `--logger pino|console`
+- `--pkg-manager pnpm|npm|yarn|bun`
+- `--provider claude|codex|cursor|cursor-provider`
+- `--vsc`, `--warp`, `--skip-install`
+
+Prerequisites: chosen package manager + Docker (for Postgres/Redis/Mailpit) + the chosen provider CLI (`claude`, `codex`, or `cursor`).
+
 ## Provider Setup
 
 ### Cloudflare (Default)
