@@ -99,9 +99,17 @@ for _reserved in node_modules .git package.json src; do
   fi
 done
 
-PROJECT_ROOT="$(pwd)/$PROJECT_NAME"
-if [[ -d "$PROJECT_ROOT" ]]; then
-  echo "Error: directory '$PROJECT_ROOT' already exists" >&2
+# Self-contained layout: $PARENT_ROOT/{main, wt/<lane>, .beads}.
+# MAIN_REPO is the source-of-truth working tree on branch `main`. Per-agent
+# worktrees live under wt/ on persistent `agent/<lane>` branches (created later
+# in this script via `git worktree add`). PROJECT_ROOT is kept as an alias for
+# MAIN_REPO so the downstream Python AGENTS.md generator keeps working.
+PARENT_ROOT="$(pwd)/$PROJECT_NAME"
+MAIN_REPO="$PARENT_ROOT/main"
+STATE_ROOT="$PARENT_ROOT"
+PROJECT_ROOT="$MAIN_REPO"
+if [[ -e "$PARENT_ROOT" ]]; then
+  echo "Error: '$PARENT_ROOT' already exists" >&2
   exit 1
 fi
 
@@ -127,8 +135,8 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "Step 1 — Scaffolding project '$PROJECT_NAME' with @geekmidas/toolbox"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-mkdir -p "$PROJECT_ROOT"
-cd "$PROJECT_ROOT"
+mkdir -p "$PARENT_ROOT" "$MAIN_REPO"
+cd "$MAIN_REPO"
 
 # Generate DB credentials
 API_DB_PASSWORD=$(_random_password)
@@ -237,6 +245,8 @@ dist/
 *.tsbuildinfo
 .DS_Store
 coverage/
+.beads
+.beads/
 EOF
 
 # ── gkm.config.ts ─────────────────────────────────────────────────────────────
@@ -1409,8 +1419,28 @@ install_pi() {
   fi
 }
 
+# Install worktrunk (wt) CLI if not present (worktree orchestration)
+install_worktrunk() {
+  if command -v wt >/dev/null 2>&1; then
+    echo "  wt: already installed ($(wt --version 2>/dev/null || echo 'unknown version'))"
+    return
+  fi
+  echo "  wt: installing worktrunk..."
+  local _installed=false
+  if command -v cargo >/dev/null 2>&1 && cargo install worktrunk >/dev/null 2>&1; then
+    _installed=true
+  elif command -v brew >/dev/null 2>&1 && brew install max-sixty/tap/worktrunk >/dev/null 2>&1; then
+    _installed=true
+  fi
+  if [[ "$_installed" == false ]]; then
+    echo "  warning: worktrunk install failed; worktree creation will fall back to plain 'git worktree add'"
+    echo "  hint: install via 'cargo install worktrunk' or see https://github.com/max-sixty/worktrunk"
+  fi
+}
+
 install_bd
 install_pi
+install_worktrunk
 
 # Only proceed if bd is available for agent init
 if ! command -v bd >/dev/null 2>&1; then
@@ -1422,6 +1452,12 @@ fi
 
 if ! command -v pi >/dev/null 2>&1; then
   echo "  note: pi not on PATH — run.sh scripts will exit 127 until pi is installed"
+fi
+
+if command -v wt >/dev/null 2>&1; then
+  WT_AVAILABLE=true
+else
+  WT_AVAILABLE=false
 fi
 
 # ── Copy skills from global install into .agents/skills/ ──────────────────────
@@ -1634,12 +1670,13 @@ mkdir -p "$AGENTS_ROOT/agents/lib"
 # ── Write agent instruction files via Python ──────────────────────────────────
 # Export for child Python process
 PROJECT_ROOT="$(pwd)"
-export PROJECT_NAME PROJECT_ROOT AGENTS_ROOT PKG_MANAGER
+export PROJECT_NAME PROJECT_ROOT PARENT_ROOT AGENTS_ROOT PKG_MANAGER
 python3 << 'PYEOF'
 import os, shutil
 
 PROJECT_NAME = os.environ.get("PROJECT_NAME", "")
 PROJECT_ROOT = os.environ.get("PROJECT_ROOT", "")
+PARENT_ROOT = os.environ.get("PARENT_ROOT", os.path.dirname(PROJECT_ROOT))
 AGENTS_ROOT = os.environ.get("AGENTS_ROOT", "")
 PKG_MANAGER = os.environ.get("PKG_MANAGER", "pnpm")
 # Build/test/lint command strings per pkg manager
@@ -1652,6 +1689,15 @@ SHARED = """# Senior Engineering Standards (Mandatory)
 
 You operate at principal-engineer quality with balanced speed and rigor. These
 rules are part of the **definition of done** for every bead.
+
+## Worktree layout (worktrunk-managed)
+
+- **Umbrella**: `{PARENT_ROOT}`
+- **Integration tree** (branch `main`): `{PROJECT_ROOT}` — boss, manager, product-owner, and tester land here.
+- **Per-agent worktrees** (branches `agent/<lane>`): `{PARENT_ROOT}/wt/<lane>` — dev-1/2/3, qa each get their own.
+- **Shared beads database**: `{PARENT_ROOT}/.beads` — symlinked into every lane, so `bd list` shows the full board from anywhere.
+
+Use `git worktree list` (or `wt list`) to see the fleet. Never `cd` outside your assigned worktree; commit on your `agent/<lane>` branch and PR back to `main`.
 
 ## Architecture and structure
 - **SOLID, pragmatically.** Single responsibility per file/function. Extend
@@ -1713,7 +1759,7 @@ Before `ready_for_qa`, you must:
 A bead traverses: `ready_for_qa` → `in_qa` → (qa PASS) → `ready_for_test` →
 `in_test` → (tester PASS) → merged + `closed`. Every implementation bead must
 traverse the tester gate before `closed`. There is no skip path.
-""".replace("{BUILD_CMD}", BUILD_CMD).replace("{TEST_CMD}", TEST_CMD).replace("{LINT_CMD}", LINT_CMD).replace("{VERIFY_ALL}", VERIFY_ALL)
+""".replace("{BUILD_CMD}", BUILD_CMD).replace("{TEST_CMD}", TEST_CMD).replace("{LINT_CMD}", LINT_CMD).replace("{VERIFY_ALL}", VERIFY_ALL).replace("{PARENT_ROOT}", PARENT_ROOT).replace("{PROJECT_ROOT}", PROJECT_ROOT).replace("{PROJECT_NAME}", PROJECT_NAME)
 
 with open(f"{AGENTS_ROOT}/agents/boss/AGENTS.md", "w") as f:
     f.write("""# Identity
@@ -2219,6 +2265,7 @@ Run `bd prime` at session start. Read `.agents/skills/beads/SKILL.md` before any
 _SUBS = {
     "{PROJECT_NAME}": PROJECT_NAME,
     "{PROJECT_ROOT}": PROJECT_ROOT,
+    "{PARENT_ROOT}": PARENT_ROOT,
     "{PKG_MANAGER}": PKG_MANAGER,
     "{BUILD_CMD}": BUILD_CMD,
     "{TEST_CMD}": TEST_CMD,
@@ -2245,8 +2292,10 @@ export PATH="${HOME}/.local/bin:${HOME}/.cursor/bin:/opt/homebrew/bin:/usr/local
 
 cd "$(dirname "$0")"
 LANE_DIR="$(pwd)"
-ROOT_DIR="$(cd ../.. && pwd)"
+ROOT_DIR="$(cd ../.. && pwd)"             # main working tree (branch: main)
+PARENT_DIR="$(cd "$ROOT_DIR/.." && pwd)"  # umbrella: holds main/, wt/, .beads/
 _AGENT="$(basename "$LANE_DIR")"
+WORKTREE_DIR="$PARENT_DIR/wt/$_AGENT"     # per-agent worktree (branch: agent/<lane>)
 
 _resolve_cli() {
   if command -v pi >/dev/null 2>&1; then
@@ -2261,7 +2310,17 @@ PI_BIN="$(_resolve_cli)" || exit 127
 _PROMPT_FILE="$LANE_DIR/prompt.txt"
 _SYSTEM_PROMPT="$(cat "$_PROMPT_FILE")"
 
-cd "$ROOT_DIR"
+# Boss owns the integration tree (main). Workers operate inside their own
+# worktree on branch agent/<lane>; if it's missing (older scaffolds), fall
+# back to main with a loud warning so the lane still boots.
+if [[ "$_AGENT" == "boss" ]]; then
+  cd "$ROOT_DIR"
+elif [[ -d "$WORKTREE_DIR" ]]; then
+  cd "$WORKTREE_DIR"
+else
+  echo "[$_AGENT] worktree missing at $WORKTREE_DIR — falling back to $ROOT_DIR" >&2
+  cd "$ROOT_DIR"
+fi
 
 # Per-lane session storage (boss persistent, workers ephemeral).
 _SESSION_DIR="$LANE_DIR/.pi-sessions"
@@ -2982,14 +3041,33 @@ WARP_EOF
   echo "  ✓ .warp/launch_configurations/$PROJECT_NAME-agents.yaml"
 fi
 
-# ── Initialize beads (bd) if available ────────────────────────────────────────
+# ── Step 5: Commit agents/ on main so worktree branches inherit ───────────────
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Step 5 — Committing agents/ + tooling on main"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# .worktreeinclude tells worktrunk which gitignored files to copy into each new
+# worktree. Env files + sessions are the typical inclusions; the .beads symlink
+# is created explicitly below.
+cat > "$MAIN_REPO/.worktreeinclude" <<'WTINCLUDE'
+.env
+.env.local
+.env.*.local
+WTINCLUDE
+
+cd "$MAIN_REPO"
+git add .
+git commit -q -m "🤖 Scaffold agents, skills, run-all, and provider configs" || \
+  echo "  note: nothing new to commit"
+
+# ── Step 6: Initialize beads (bd) at the umbrella level ───────────────────────
 if [[ "$BD_AVAILABLE" == true ]]; then
   echo ""
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo "Step 5 — Initializing beads (bd) in the project"
+  echo "Step 6 — Initializing beads (bd) at $STATE_ROOT/.beads"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-  # Initialize bd non-interactively
   BD_INIT_FLAGS=(
     --non-interactive
     --role maintainer
@@ -2998,10 +3076,12 @@ if [[ "$BD_AVAILABLE" == true ]]; then
     --quiet
   )
 
+  # Init in STATE_ROOT (umbrella) so every worktree can symlink to the same db
+  # and see the full board regardless of which branch is checked out.
+  cd "$STATE_ROOT"
   if BD_NON_INTERACTIVE=1 bd init "${BD_INIT_FLAGS[@]}" 2>/dev/null; then
-    echo "  ✓ beads initialized"
+    echo "  ✓ beads initialized at $STATE_ROOT/.beads"
 
-    # Set custom statuses
     REQUIRED_STATUSES="ready_for_qa,in_qa,ready_for_test,in_test"
     CURRENT_STATUSES=$(bd config get status.custom 2>/dev/null || true)
     CURRENT_STATUSES=$(echo "$CURRENT_STATUSES" | tr -d ' "')
@@ -3014,13 +3094,66 @@ if [[ "$BD_AVAILABLE" == true ]]; then
       fi
     done
     if [[ "$MISSING_STATUS" == true ]]; then
-      bd config set status.custom "$REQUIRED_STATUSES" 2>/dev/null && echo "  ✓ custom statuses set" || echo "  ⚠ could not set custom statuses"
+      bd config set status.custom "$REQUIRED_STATUSES" 2>/dev/null \
+        && echo "  ✓ custom statuses set" \
+        || echo "  ⚠ could not set custom statuses"
     else
       echo "  ✓ custom statuses already configured"
     fi
   else
     echo "  ⚠ bd init failed — skipping beads setup"
+    BD_AVAILABLE=false
   fi
+  cd "$MAIN_REPO"
+fi
+
+# Symlink MAIN_REPO/.beads → ../.beads so bd commands from main read the umbrella db.
+if [[ -d "$STATE_ROOT/.beads" ]]; then
+  if [[ -e "$MAIN_REPO/.beads" && ! -L "$MAIN_REPO/.beads" ]]; then
+    echo "  ⚠ $MAIN_REPO/.beads exists and is not a symlink — leaving alone"
+  else
+    ln -snf "../.beads" "$MAIN_REPO/.beads"
+    echo "  ✓ symlinked main/.beads → ../.beads"
+  fi
+fi
+
+# ── Step 7: Create per-agent worktrees under wt/ ──────────────────────────────
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Step 7 — Creating per-agent worktrees at $PARENT_ROOT/wt/"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+WORKTREE_LANES=(dev-1 dev-2 dev-3 manager product-owner qa tester)
+mkdir -p "$PARENT_ROOT/wt"
+
+cd "$MAIN_REPO"
+for _lane in "${WORKTREE_LANES[@]}"; do
+  _wt_path="$PARENT_ROOT/wt/$_lane"
+  _wt_branch="agent/$_lane"
+  if [[ -e "$_wt_path" ]]; then
+    echo "  • $_lane: worktree already exists at $_wt_path — skipping"
+    continue
+  fi
+  if git worktree add -b "$_wt_branch" "$_wt_path" main >/dev/null 2>&1; then
+    echo "  ✓ $_lane: branch $_wt_branch → $_wt_path"
+  else
+    echo "  ⚠ $_lane: 'git worktree add' failed — lane will fall back to main"
+    continue
+  fi
+  # Each worktree shares the umbrella beads db via symlink. Beads stores its
+  # state in .beads/ at the working-tree root, so a relative symlink up two
+  # levels lands on $PARENT_ROOT/.beads regardless of the lane name.
+  if [[ -d "$STATE_ROOT/.beads" ]]; then
+    rm -rf "$_wt_path/.beads" 2>/dev/null || true
+    ln -snf "../../.beads" "$_wt_path/.beads"
+  fi
+done
+
+# Hand worktrunk a hint about where its template should drop new worktrees.
+# Worktrunk reads `git worktree list` for existing trees regardless, so even
+# without config the lanes show up under `wt list`.
+if [[ "$WT_AVAILABLE" == true ]]; then
+  echo "  ✓ wt list will show the lanes; run 'wt list --full' from $MAIN_REPO for CI status"
 fi
 
 # ── Final summary ─────────────────────────────────────────────────────────────
@@ -3029,63 +3162,66 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "✅ $PROJECT_NAME scaffolded successfully!"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
-echo "📁 Project structure:"
+echo "📁 Project structure (worktree-per-agent):"
 echo "  $PROJECT_NAME/"
-echo "  ├── apps/"
+echo "  ├── main/                     # main repo, branch 'main' (integration)"
+echo "  │   ├── apps/"
 if [[ "$FRONTEND" == "expo" ]]; then
-echo "  │   ├── api/           # Hono + @geekmidas/constructs"
-echo "  │   ├── auth/          # better-auth magic link + Hono"
-echo "  │   └── app/           # Expo + NativeWind"
+echo "  │   │   ├── api/              # Hono + @geekmidas/constructs"
+echo "  │   │   ├── auth/             # better-auth magic link + Hono"
+echo "  │   │   └── app/              # Expo + NativeWind"
 else
-echo "  │   ├── api/           # Hono + @geekmidas/constructs"
-echo "  │   ├── auth/          # better-auth magic link + Hono"
-echo "  │   └── web/           # $FRONTEND"
+echo "  │   │   ├── api/              # Hono + @geekmidas/constructs"
+echo "  │   │   ├── auth/             # better-auth magic link + Hono"
+echo "  │   │   └── web/              # $FRONTEND"
 fi
-echo "  ├── packages/"
-echo "  │   ├── models/        # Shared Zod schemas"
-echo "  │   └── ui/            # Shared React components + Tailwind v4"
-echo "  ├── agents/            # Beads agent infrastructure"
-echo "  │   ├── boss/"
-echo "  │   ├── manager/"
-echo "  │   ├── product-owner/"
-echo "  │   ├── dev-1/"
-echo "  │   ├── dev-2/"
-echo "  │   ├── dev-3/"
-echo "  │   ├── qa/"
-echo "  │   ├── tester/"
-echo "  │   ├── lib/"
-echo "  │   ├── SKILLS.md"
-echo "  │   └── run-all.sh"
-echo "  ├── .agents/skills/    # Repo-local skill definitions"
-echo "  ├── docker-compose.yml # PostgreSQL 16$( [[ "$CACHE" == "true" ]] && echo " + Redis 7" )$( [[ "$MAILER" == "mailpit" ]] && echo " + Mailpit" || echo "")"
-echo "  ├── gkm.config.ts      # Workspace config"
-echo "  └── turbo.json         # Task orchestration"
+echo "  │   ├── packages/{models,ui}/"
+echo "  │   ├── agents/               # Beads agent infrastructure"
+echo "  │   │   ├── boss/ manager/ product-owner/ dev-{1,2,3}/ qa/ tester/"
+echo "  │   │   ├── lib/  SKILLS.md  run-all.sh"
+echo "  │   ├── .agents/skills/       # Repo-local skill definitions"
+echo "  │   ├── .worktreeinclude      # Files worktrunk copies into new worktrees"
+echo "  │   └── .beads -> ../.beads   # Symlink to the umbrella beads db"
+echo "  ├── wt/                       # Per-agent worktrees (branch 'agent/<lane>')"
+echo "  │   ├── dev-1/   .beads -> ../../.beads"
+echo "  │   ├── dev-2/   .beads -> ../../.beads"
+echo "  │   ├── dev-3/   .beads -> ../../.beads"
+echo "  │   ├── manager/         product-owner/"
+echo "  │   ├── qa/              tester/"
+echo "  └── .beads/                   # Shared beads db (visible from every lane)"
 echo ""
 echo "📋 Next steps:"
 echo ""
-echo "  cd $PROJECT_NAME"
+echo "  cd $PROJECT_NAME/main"
+echo ""
+echo "  # Inspect the lane fleet"
+echo "  git worktree list"
+if [[ "$WT_AVAILABLE" == true ]]; then
+echo "  wt list                    # worktrunk view of the same fleet"
+echo "  wt list --full             # + CI status + AI summaries"
+fi
+echo ""
+echo "  # Watch the full bead board from any lane (symlinks share the db)"
+echo "  bd list --json | jq '.[] | {id, status, assignee}'"
 echo ""
 echo "  # Start database services"
 echo "  docker compose up -d"
 echo ""
-echo "  # Default (auto): Ghostty splits the current window into one pane per"
-echo "  # worker; iTerm2 / Terminal.app get tabs. Boss runs interactive in the"
-echo "  # original pane/tab. First run prompts for macOS Accessibility permission."
+echo "  # Boot the swarm. Workers cd into their own wt/<lane>; boss runs in main."
 echo "  bash agents/run-all.sh"
-echo "  # Force a specific layout:"
 echo "  bash agents/run-all.sh --mode splits      # Ghostty splits only"
 echo "  bash agents/run-all.sh --mode tabs        # new tab per worker"
 echo "  bash agents/run-all.sh --mode background  # background child processes"
 echo ""
-echo "  # Or start the dev server"
+echo "  # Or start the dev server (from main/)"
 echo "  $PKG_MANAGER dev"
 echo ""
-echo "Agent roles:"
-echo "  • boss — chat with developer; files intake beads to manager"
-echo "  • manager — receives intake; hands to product-owner; patrols workflow"
-echo "  • product-owner — decomposes intake into 4-12+ small vertical-slice beads"
-echo "  • dev-1/2/3 — implement one bead end-to-end"
-echo "  • qa — code review + architecture + merge + knowledge capture"
-echo "  • tester — post-merge integration tester on main"
+echo "Agent roles & worktrees:"
+echo "  • boss (main/)                  — chat with developer; files intake beads to manager"
+echo "  • manager (wt/manager)          — receives intake; hands to product-owner; patrols"
+echo "  • product-owner (wt/product-owner) — decomposes intake into 4-12+ vertical-slice beads"
+echo "  • dev-1/2/3 (wt/dev-N)          — implement one bead end-to-end on agent/dev-N"
+echo "  • qa (wt/qa)                    — code review + architecture + merge + knowledge capture"
+echo "  • tester (wt/tester)            — post-merge integration tester on main"
 echo ""
-echo "Be sure to read agents/SKILLS.md and your lane's agents/<lane>/AGENTS.md at session start."
+echo "Read main/agents/SKILLS.md and your lane's main/agents/<lane>/AGENTS.md at session start."
