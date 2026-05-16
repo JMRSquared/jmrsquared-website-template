@@ -1,14 +1,18 @@
 {
   "name": "create-jmrsquared-website-template",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Scaffold a Cloudflare Pages or Firebase Hosting-ready Vite website with Git and GitHub Actions deployment setup.",
   "type": "module",
   "packageManager": "yarn@4.13.0",
   "scripts": {
     "validate:package": "node ./scripts/ci/validate-package.mjs",
-    "prepare:github-package": "node ./scripts/ci/prepare-github-package.mjs"
+    "prepare:github-package": "node ./scripts/ci/prepare-github-package.mjs",
+    "update-template": "node ./bin/update.js"
   },
-  "bin": "./bin/create.js",
+  "bin": {
+    "create-jmrsquared-website-template": "./bin/create.js",
+    "update-jmrsquared-website-template": "./bin/update.js"
+  },
   "files": [
     "bin",
     "lib",

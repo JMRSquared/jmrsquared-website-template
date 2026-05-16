@@ -36,6 +36,7 @@ PROVIDER=""                # claude | codex | cursor | cursor-provider | pi
 VSC=false
 WARP=false
 SKIP_INSTALL=false
+UPDATE_MODE=false           # true = refresh agents/skills/lib in existing project
 
 # ── Argument parsing ───────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
@@ -51,6 +52,7 @@ while [[ $# -gt 0 ]]; do
     --vsc)          VSC=true;           shift ;;
     --warp)         WARP=true;          shift ;;
     --skip-install) SKIP_INSTALL=true;   shift ;;
+    --update)       UPDATE_MODE=true;    shift ;;
     -h|--help)
       cat <<HELP
 Usage: $0 --name my-app [options]
@@ -67,6 +69,10 @@ Options:
   --vsc          Generate .vscode/tasks.json
   --warp         Generate Warp launch configuration
   --skip-install Skip dependency installation (for CI)
+  --update       Refresh agents/skills/lib in an EXISTING project. Skips
+                 project scaffolding (package.json, src, deps, git init,
+                 initial commit). Re-runs only the agent prompt + skills +
+                 lib + run-all generation. Idempotent.
   --help         Show this help
 
 Examples:
@@ -82,35 +88,67 @@ HELP
 done
 
 # ── Validation ────────────────────────────────────────────────────────────────
-if [[ -z "$PROJECT_NAME" ]]; then
-  echo "Error: --name is required" >&2
-  exit 1
-fi
-
-if [[ ! "$PROJECT_NAME" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
-  echo "Error: --name must be npm-safe (alphanumeric + hyphens, starts with letter/number)" >&2
-  exit 1
-fi
-
-for _reserved in node_modules .git package.json src; do
-  if [[ "$PROJECT_NAME" == "$_reserved" ]]; then
-    echo "Error: '$PROJECT_NAME' is a reserved name" >&2
+# In update mode, --name is optional: it is recovered from main/package.json
+# after PARENT_ROOT is resolved below. In init mode it is required.
+if [[ "$UPDATE_MODE" == false ]]; then
+  if [[ -z "$PROJECT_NAME" ]]; then
+    echo "Error: --name is required" >&2
     exit 1
   fi
-done
+
+  if [[ ! "$PROJECT_NAME" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+    echo "Error: --name must be npm-safe (alphanumeric + hyphens, starts with letter/number)" >&2
+    exit 1
+  fi
+
+  for _reserved in node_modules .git package.json src; do
+    if [[ "$PROJECT_NAME" == "$_reserved" ]]; then
+      echo "Error: '$PROJECT_NAME' is a reserved name" >&2
+      exit 1
+    fi
+  done
+fi
 
 # Self-contained layout: $PARENT_ROOT/{main, wt/<lane>, .beads}.
 # MAIN_REPO is the source-of-truth working tree on branch `main`. Per-agent
 # worktrees live under wt/ on persistent `agent/<lane>` branches (created later
 # in this script via `git worktree add`). PROJECT_ROOT is kept as an alias for
 # MAIN_REPO so the downstream Python AGENTS.md generator keeps working.
-PARENT_ROOT="$(pwd)/$PROJECT_NAME"
-MAIN_REPO="$PARENT_ROOT/main"
-STATE_ROOT="$PARENT_ROOT"
-PROJECT_ROOT="$MAIN_REPO"
-if [[ -e "$PARENT_ROOT" ]]; then
-  echo "Error: '$PARENT_ROOT' already exists" >&2
-  exit 1
+#
+# Path resolution differs by mode:
+#   init    PARENT_ROOT = $cwd/$name (must NOT exist — fresh scaffold)
+#   update  PARENT_ROOT = $cwd if $cwd/main exists, else $(dirname $cwd) if
+#           $cwd is itself main/. PARENT_ROOT MUST exist with main/ inside.
+if [[ "$UPDATE_MODE" == true ]]; then
+  if [[ -d "$(pwd)/main" && -f "$(pwd)/main/package.json" ]]; then
+    PARENT_ROOT="$(pwd)"
+  elif [[ -f "$(pwd)/package.json" && "$(basename "$(pwd)")" == "main" ]]; then
+    PARENT_ROOT="$(cd .. && pwd)"
+  else
+    echo "Error: --update must be run from a project umbrella (containing main/) or from inside main/." >&2
+    echo "       cwd: $(pwd)" >&2
+    exit 1
+  fi
+  MAIN_REPO="$PARENT_ROOT/main"
+  STATE_ROOT="$PARENT_ROOT"
+  PROJECT_ROOT="$MAIN_REPO"
+  if [[ ! -d "$MAIN_REPO" ]]; then
+    echo "Error: '$MAIN_REPO' not found — update requires existing main/ working tree." >&2
+    exit 1
+  fi
+  if [[ ! -d "$MAIN_REPO/.git" && ! -f "$MAIN_REPO/.git" ]]; then
+    echo "Error: '$MAIN_REPO' is not a git working tree." >&2
+    exit 1
+  fi
+else
+  PARENT_ROOT="$(pwd)/$PROJECT_NAME"
+  MAIN_REPO="$PARENT_ROOT/main"
+  STATE_ROOT="$PARENT_ROOT"
+  PROJECT_ROOT="$MAIN_REPO"
+  if [[ -e "$PARENT_ROOT" ]]; then
+    echo "Error: '$PARENT_ROOT' already exists" >&2
+    exit 1
+  fi
 fi
 
 SUPPORTED_PKGS="pnpm npm yarn bun"
@@ -130,6 +168,22 @@ _random_password() {
   node -e "console.log(require('crypto').randomBytes(24).toString('hex'))"
 }
 
+if [[ "$UPDATE_MODE" == true ]]; then
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "Update mode — refreshing agents/skills/lib in '$PARENT_ROOT'"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  if [[ -z "$PROJECT_NAME" ]]; then
+    # Recover name from main/package.json so downstream substitutions work.
+    PROJECT_NAME=$(node -e "try{console.log(require('$MAIN_REPO/package.json').name||'')}catch(e){}" 2>/dev/null || true)
+    if [[ -z "$PROJECT_NAME" ]]; then
+      PROJECT_NAME=$(basename "$PARENT_ROOT")
+    fi
+    echo "  inferred --name $PROJECT_NAME"
+  fi
+  cd "$MAIN_REPO"
+fi
+
+if [[ "$UPDATE_MODE" == false ]]; then
 # ── Step 1: Scaffold via gkm fullstack-init ───────────────────────────────────
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "Step 1 — Scaffolding project '$PROJECT_NAME' with @geekmidas/toolbox"
@@ -1376,6 +1430,7 @@ Services: PostgreSQL 16 + Redis 7$( [[ "$MAILER" == "mailpit" ]] && echo " + Mai
 Package manager: $PKG_MANAGER
 Logger: $LOGGER
 "
+fi  # end UPDATE_MODE==false guard around Steps 1-3
 
 # ── Step 4: Install beads agents + pi ─────────────────────────────────────────
 echo ""
@@ -1811,15 +1866,17 @@ with open(f"{AGENTS_ROOT}/agents/manager/AGENTS.md", "w") as f:
     f.write("""# Identity
 You are **manager**, the senior orchestration agent for {PROJECT_NAME}.
 Your single source of truth for new work is **intake beads filed by boss**.
-You receive intake, hand off to product-owner, then patrol the workflow status
-chain to keep work unblocked. You never write application code and never decompose.
+You receive intake, hand off to product-owner, patrol the workflow status
+chain to keep work unblocked, and **actively detect + descope hanging tasks
+so no agent ever sits idle on a stuck bead**. You never write application
+code and never decompose into implementation beads yourself.
 
 # Project
 Root: {PROJECT_ROOT}.
 
 # Roster
 - **boss**: files `--tag intake` beads assigned to you. You never assign back to boss.
-- **manager** (you): receive intake → hand off to product-owner → patrol.
+- **manager** (you): receive intake → hand off to product-owner → patrol → descope stalls.
 - **product-owner**: decomposes intake into many small vertical-slice implementation beads.
 - **dev-1, dev-2, dev-3**: implementation (assigned by product-owner, not you).
 - **qa**: quality gate (code review + architecture + merge + knowledge capture).
@@ -1840,18 +1897,86 @@ On every pass:
 
 # Patrol responsibilities
 After handoff, patrol the workflow status chain on every pass and unblock anything stuck:
-- `bd list --status in_progress` — flag stuck beads (no commits, missing branch/PR).
+- `bd list --status in_progress` — run stale-task sweep (see next section).
 - `bd list --status ready_for_qa` — confirm DONE comment lists branch + PR URL + verification commands; confirm evidence-validator exit 0; ensure qa picks it up.
 - `bd list --status in_qa` — watch for stalled review; qa owns merge after PASS.
 - `bd list --status open` (excluding intake handoff queue) — resolve dependency loops.
 
-When a bead is stuck, comment via `bd comments add <id> --author manager "<message>"`
-describing the issue and next required action. Reassign only when original assignment was wrong.
+# Stale-task sweep (mandatory every pass — no agent left hanging)
+You are responsible for the liveness of every `in_progress` bead. An agent that
+silently stalls on a too-big task wastes a lane. **Every patrol pass**:
+
+1. Run the stale-task monitor:
+   ```
+   bash agents/lib/stale-task-monitor.sh --threshold-minutes 60 --json
+   ```
+   It checks four liveness signals per `in_progress` bead and flags any whose
+   newest signal is older than the threshold (default 60 min):
+   - latest `bd comments` timestamp
+   - latest commit on the bead's branch
+   - bead `updated_at` field
+   - newest file mtime in the assignee's worktree (`<parent>/wt/<agent>`)
+
+2. For each stale bead returned, decide:
+   - **Warn first (30-60 min idle):** post a probing comment asking the assignee
+     for status + current blocker. Give it one more pass to recover.
+   - **Descope (60+ min idle after a warn, or no plausible recovery):** execute
+     the descope protocol below. Do not wait indefinitely.
+
+3. **Descope protocol — bead too big, or approach broken:**
+   a. Comment on the stale bead capturing what was learned:
+      ```
+      bd comments add <stale-id> --author manager "Descoping after <N>m idle. \\
+      Observed: <signals>. Hypothesized blocker: <why>. Closing and handing \\
+      replacement intake to product-owner for re-decomposition into smaller slices."
+      ```
+   b. Tag the closed bead for audit, close it, and reap its worktree.
+      The bead record stays in `closed` forever (never delete the record —
+      it is the historical audit trail). Only the ephemeral wt + branch are
+      removed:
+      ```
+      bd update <stale-id> --tag descoped
+      bd update <stale-id> --status closed
+      bash agents/lib/reap-bead-worktree.sh --bead <stale-id>
+      ```
+      (Manager exception to the "never close without qa PASS" rule applies ONLY
+      to descope closures, which MUST carry the `descoped` tag AND reference a
+      replacement parent — see step c. The reaper refuses to touch main/ or
+      any static lane wt, so this is safe.)
+   c. Create a fresh `intake`-shaped parent for product-owner with the simplified
+      approach. Tag it `descope` + `intake`, link the old bead as origin:
+      ```
+      bd create \\
+        --title "Re-scope: <original title>" \\
+        --description "<simplified approach. break original work into 2-4x more, \\
+        smaller, narrower slices. document the blocker we hit so PO sequences \\
+        the children to avoid it.>" \\
+        --tag descope --tag intake \\
+        --assignee product-owner
+      bd dep add <new-parent-id> <stale-id>
+      bd comments add <new-parent-id> --author manager \\
+        "Re-scope of <stale-id> (idle <N>m). Original blocker: <one line>. \\
+        Decompose into smaller slices than original; if original had K children, \\
+        target 2K-4K children with narrower acceptance criteria."
+      ```
+
+4. Repeat-descope guard: if a bead derived from a descope parent ALSO stalls,
+   escalate to qa for arbitration (`bd update <id> --tag arch --assign qa`)
+   instead of descoping again. Two stalls on the same lineage = architectural
+   problem, not sizing.
+
+# General stuck-bead handling (non-stale)
+For beads that are NOT idle but still blocked (missing dep, wrong assignee,
+broken branch), comment via `bd comments add <id> --author manager "<message>"`
+describing the issue and next required action. Reassign only when original
+assignment was wrong.
 
 # Hard rules
-- Never create implementation beads (product-owner does).
+- Never create implementation beads (product-owner does). Descope intake beads ARE allowed and required.
 - Never assign work to dev-1/2/3 directly (product-owner assigns).
-- Never close a bead that did not transition through `in_qa` with a qa PASS comment — flag any `ready_for_qa → closed` jump as a process violation and reset to `ready_for_test`.
+- Never close a bead that did not transition through `in_qa` with a qa PASS comment — flag any `ready_for_qa → closed` jump as a process violation and reset to `ready_for_test`. **Exception:** descope closures (step 3b above) are permitted and must carry the `descoped` tag plus a replacement parent reference.
+- Never `bd delete` a bead. Closed beads stay in the database forever as the historical audit trail. Only the ephemeral per-bead worktree + branch are reaped (via `agents/lib/reap-bead-worktree.sh`); the record itself is immortal.
+- Never let a stale bead sit beyond the descope threshold without action. Silence is failure.
 - Never write application code.
 - Never claim literal "100% confidence".
 
@@ -1882,6 +2007,9 @@ Read `.agents/skills/beads/SKILL.md` for the full command reference.
 # Decomposition (your only source of new work)
 On every pass:
 1. Poll `bd list --assignee product-owner --status open --json` for parents from manager.
+   Sort `--tag descope` parents to the FRONT — descope intake means an agent is
+   already idle waiting for replacement work; do not let it queue behind regular
+   intake.
 2. Read description fully (scope, AC, Q&A, originating bead reference).
 3. Perform a **thorough repo discovery pass** — read relevant files to map every surface.
 4. **In-flight overlap audit (mandatory)** before creating any child bead:
@@ -1892,6 +2020,10 @@ On every pass:
    Absorb or sequence overlaps; do not create duplicate parallel beads.
 5. Decompose into **many small vertical-slice beads (target 4-12+)**.
    Stack-wide intake → 4-12+ children. dep-fix → 1-4 children. follow-up → size to scope.
+   **Descope intake → 2x-4x the child count the original parent produced**, with
+   each slice strictly narrower in AC than the original. Read the manager's
+   descope comment on the parent for the observed blocker and sequence children
+   so that blocker is encountered LAST, after foundation work lands.
 6. Before each `bd create`, run uniqueness gate:
    ```
    bash agents/lib/bead-uniqueness.sh "<proposed title>" "<impacted_surfaces csv>"
@@ -2193,7 +2325,11 @@ Watch `bd list --status ready_for_qa`. For each bead:
 9. Post results — no performative agreement, never "absolutely right!":
    - PASS: `bd comments add <task> --author qa "PASS: validator ok; {BUILD_CMD}/{TEST_CMD}/{LINT_CMD} green on PR branch <name>; standards + scope audit clean; architecture: <one-line>; merging."`
    - FAIL: `bd comments add <task> --author qa "FAIL: [exact failing command output / standards violation file:line / scope violation / architectural concern]"`
-10. PASS → run `bash agents/lib/merge-and-close.sh <task> qa` to squash-merge and close.
+10. PASS → run `bash agents/lib/merge-and-close.sh <task> qa` to squash-merge
+    the PR, flip the bead to `closed`, and reap the per-bead worktree +
+    branch. The bead RECORD is preserved forever (never `bd delete`); only
+    the ephemeral worktree is removed. Static lane worktrees and main/ are
+    never touched by the reaper.
     FAIL → `bd update <task> --status in_progress` with a clear repro.
 
 # Pass 2 — Architecture escalations
@@ -2223,6 +2359,7 @@ At end of each pass:
 - Do NOT approve work you have not independently tested and audited.
 - Do NOT create implementation beads (product-owner owns that).
 - Do NOT close beads without a PASS comment and `merge-and-close.sh`.
+- Do NOT `bd delete` beads. Closed beads stay in the database as the historical audit trail; only the per-bead worktree + branch are reaped.
 - Do NOT skip the tester gate — every passing bead transitions to `ready_for_test` (for projects with tester lane).
 - Do NOT claim literal "100% confidence".
 
@@ -2509,7 +2646,18 @@ chmod +x "$AGENTS_ROOT/agents/lib/bead-uniqueness.sh"
 # Write merge-and-close.sh
 cat > "$AGENTS_ROOT/agents/lib/merge-and-close.sh" <<'MERGE_EOF'
 #!/usr/bin/env bash
-# merge-and-close.sh — qa merges PR and closes bead.
+# merge-and-close.sh — qa merges PR, marks bead `closed`, and reaps the
+# per-bead worktree.
+#
+# Lifecycle invariants:
+#   • The bead RECORD is preserved forever — we only flip its status to
+#     `closed`. Never run `bd delete` here.
+#   • The per-bead worktree (and its branch) are ephemeral. Once the PR is
+#     merged into main, the wt + branch are removed so disk stays clean
+#     and stale checkouts cannot drift from main.
+#   • Static lane worktrees (wt/dev-1, wt/manager, wt/qa, ...) and the main
+#     working tree are NEVER reaped, regardless of which branch was merged.
+#
 # Usage: bash agents/lib/merge-and-close.sh <bead-id> <actor>
 # Actor is the agent performing the merge (qa or manager-fallback).
 set -euo pipefail
@@ -2568,13 +2716,311 @@ else
   exit 3
 fi
 
-# Close bead
+# Close bead (status flip only — record is preserved for audit/history).
 bd update "$BEAD_ID" --status closed
 bd comments add "$BEAD_ID" --author "$ACTING_AGENT" "Merged and closed by $ACTING_AGENT via merge-and-close.sh."
 echo "merge-and-close: bead $BEAD_ID closed"
+
+# Reap the per-bead worktree (post-merge). Delegated to reap-bead-worktree.sh
+# which is the single source of truth for reap safety rules. The bead record
+# itself is NEVER deleted — only the ephemeral wt + branch are removed.
+LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -x "$LIB_DIR/reap-bead-worktree.sh" ]]; then
+  bash "$LIB_DIR/reap-bead-worktree.sh" --branch "$BRANCH" || \
+    echo "merge-and-close: warning — reaper exited non-zero; check above"
+else
+  echo "merge-and-close: warning — reap-bead-worktree.sh missing; leaving wt intact"
+fi
+
 exit 0
 MERGE_EOF
 chmod +x "$AGENTS_ROOT/agents/lib/merge-and-close.sh"
+
+# Write reap-bead-worktree.sh — standalone worktree reaper for a single
+# bead branch. Used by merge-and-close (post-merge) and by manager descope
+# (post-close of stale bead). Bead RECORDS are never deleted — this only
+# removes the ephemeral wt + local branch.
+cat > "$AGENTS_ROOT/agents/lib/reap-bead-worktree.sh" <<'REAP_EOF'
+#!/usr/bin/env bash
+# reap-bead-worktree.sh — remove the per-bead worktree (and local branch) for
+# a finished bead. Bead record is preserved by the caller (status=closed).
+#
+# Usage:
+#   bash agents/lib/reap-bead-worktree.sh --branch bead/<id>
+#   bash agents/lib/reap-bead-worktree.sh --bead <bead-id>     # resolve branch from DONE comment
+#
+# Safety:
+#   - Only reaps branches under the bead/* namespace.
+#   - Refuses to touch main/ or any static lane (dev-1, manager, qa, ...).
+#   - Best-effort; failures emit warnings but return 0.
+set -uo pipefail
+
+BRANCH=""
+BEAD_ID=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --branch) BRANCH="${2:-}"; shift 2 ;;
+    --bead)   BEAD_ID="${2:-}"; shift 2 ;;
+    -h|--help)
+      sed -n '2,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+      exit 0 ;;
+    *) echo "reap-bead-worktree: unknown arg: $1" >&2; exit 1 ;;
+  esac
+done
+
+if [[ -z "$BRANCH" && -n "$BEAD_ID" ]]; then
+  if ! command -v bd >/dev/null 2>&1; then
+    echo "reap-bead-worktree: bd not available — pass --branch explicitly" >&2
+    exit 1
+  fi
+  BRANCH=$(bd comments list "$BEAD_ID" --json 2>/dev/null | python3 -c "
+import json, sys, re
+try:
+    for c in json.load(sys.stdin):
+        body = c.get('body','')
+        if 'DONE' in body.upper():
+            m = re.search(r'branch[:\s]+([A-Za-z0-9._/-]+)', body, re.I)
+            if m:
+                print(m.group(1)); sys.exit(0)
+except Exception:
+    pass
+" 2>/dev/null || echo "")
+fi
+
+if [[ -z "$BRANCH" ]]; then
+  echo "reap-bead-worktree: no branch resolved — nothing to do" >&2
+  exit 0
+fi
+
+case "$BRANCH" in
+  bead/*) ;;
+  *)
+    echo "reap-bead-worktree: branch '$BRANCH' is not in bead/* namespace — refusing"
+    exit 0
+    ;;
+esac
+
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+
+WT_PATHS=$(git -C "$REPO_ROOT" worktree list --porcelain 2>/dev/null | awk -v b="refs/heads/$BRANCH" '
+  /^worktree / {wt=$2}
+  $0 == "branch " b {print wt}
+')
+
+if [[ -n "$WT_PATHS" ]]; then
+  while IFS= read -r wt; do
+    [[ -z "$wt" ]] && continue
+    base=$(basename "$wt")
+    if [[ "$base" == "main" ]]; then
+      echo "reap-bead-worktree: refusing to reap main worktree at $wt"
+      continue
+    fi
+    case "$base" in
+      dev-[0-9]*|manager|product-owner|qa|tester|boss)
+        echo "reap-bead-worktree: refusing to reap static lane worktree $base"
+        continue
+        ;;
+    esac
+    echo "reap-bead-worktree: removing $wt (branch $BRANCH)"
+    if git -C "$REPO_ROOT" worktree remove --force "$wt" 2>/dev/null; then
+      echo "reap-bead-worktree: removed worktree $wt"
+    else
+      echo "reap-bead-worktree: warning — git worktree remove failed; falling back to rm -rf + prune"
+      rm -rf "$wt" 2>/dev/null || true
+      git -C "$REPO_ROOT" worktree prune 2>/dev/null || true
+    fi
+  done <<< "$WT_PATHS"
+else
+  echo "reap-bead-worktree: no worktree found for branch $BRANCH"
+fi
+
+if git -C "$REPO_ROOT" show-ref --verify --quiet "refs/heads/$BRANCH"; then
+  if git -C "$REPO_ROOT" branch -D "$BRANCH" 2>/dev/null; then
+    echo "reap-bead-worktree: deleted local branch $BRANCH"
+  else
+    echo "reap-bead-worktree: warning — could not delete local branch $BRANCH"
+  fi
+fi
+
+exit 0
+REAP_EOF
+chmod +x "$AGENTS_ROOT/agents/lib/reap-bead-worktree.sh"
+
+# Write stale-task-monitor.sh — detect hanging in_progress beads.
+cat > "$AGENTS_ROOT/agents/lib/stale-task-monitor.sh" <<'STALE_EOF'
+#!/usr/bin/env bash
+# stale-task-monitor.sh — emit JSON list of stale in_progress beads.
+#
+# A bead is stale when ALL liveness signals are older than the threshold:
+#   1. Latest bd comment timestamp
+#   2. Latest commit on bead's branch (if branch exists)
+#   3. Bead's own updated_at field
+#   4. Newest file mtime in the assigned agent's worktree (if locatable)
+#
+# Usage:
+#   bash agents/lib/stale-task-monitor.sh [--threshold-minutes N] [--json|--report]
+#
+# Defaults: threshold 60 min, output JSON array on stdout.
+# Each stale entry: {id, title, assignee, branch, age_minutes, signals:{comments,commits,updated_at,worktree}}.
+# Exit 0 always (manager decides action). Stderr carries diagnostics.
+set -euo pipefail
+
+THRESHOLD_MIN=60
+FORMAT="json"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --threshold-minutes) THRESHOLD_MIN="${2:-60}"; shift 2 ;;
+    --threshold-minutes=*) THRESHOLD_MIN="${1#--threshold-minutes=}"; shift ;;
+    --json) FORMAT="json"; shift ;;
+    --report) FORMAT="report"; shift ;;
+    -h|--help)
+      sed -n '2,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+      exit 0 ;;
+    *) echo "stale-task-monitor: unknown arg: $1" >&2; exit 1 ;;
+  esac
+done
+
+if ! command -v bd >/dev/null 2>&1; then
+  echo "stale-task-monitor: bd not available" >&2
+  echo "[]"
+  exit 0
+fi
+
+# Resolve repo root + worktree parent (agents live at $PARENT_ROOT/wt/<agent>).
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+PARENT_ROOT="$(cd "$REPO_ROOT/.." && pwd)"
+
+LIVE_JSON=$(bd list --status in_progress --json 2>/dev/null || echo "[]")
+export LIVE_JSON THRESHOLD_MIN PARENT_ROOT REPO_ROOT FORMAT
+
+python3 <<'PYSTALE'
+import json, os, re, subprocess, sys
+from datetime import datetime, timezone
+
+THRESHOLD = int(os.environ["THRESHOLD_MIN"]) * 60
+PARENT_ROOT = os.environ["PARENT_ROOT"]
+REPO_ROOT = os.environ["REPO_ROOT"]
+FORMAT = os.environ.get("FORMAT", "json")
+NOW = datetime.now(timezone.utc).timestamp()
+
+def parse_iso(s):
+    if not s: return None
+    s = s.replace("Z", "+00:00")
+    try: return datetime.fromisoformat(s).timestamp()
+    except Exception: return None
+
+def run(cmd, cwd=None):
+    try:
+        r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=10)
+        return r.stdout.strip() if r.returncode == 0 else ""
+    except Exception:
+        return ""
+
+def newest_comment_ts(bead_id):
+    raw = run(["bd", "comments", "list", bead_id, "--json"])
+    if not raw: return None
+    try:
+        comments = json.loads(raw)
+    except Exception:
+        return None
+    best = None
+    for c in comments:
+        ts = parse_iso(c.get("created_at") or c.get("createdAt") or c.get("timestamp"))
+        if ts and (best is None or ts > best):
+            best = ts
+    return best
+
+def branch_last_commit_ts(branch):
+    if not branch: return None
+    out = run(["git", "log", "-1", "--format=%cI", branch], cwd=REPO_ROOT)
+    if not out:
+        out = run(["git", "log", "-1", "--format=%cI", f"origin/{branch}"], cwd=REPO_ROOT)
+    return parse_iso(out)
+
+def worktree_newest_mtime(assignee):
+    if not assignee: return None
+    candidates = [
+        os.path.join(PARENT_ROOT, "wt", assignee),
+        os.path.join(PARENT_ROOT, assignee),
+    ]
+    for path in candidates:
+        if not os.path.isdir(path): continue
+        newest = 0
+        for root, dirs, files in os.walk(path):
+            dirs[:] = [d for d in dirs if d not in (".git", "node_modules", ".next", "dist", "build", ".turbo")]
+            for f in files:
+                try:
+                    m = os.path.getmtime(os.path.join(root, f))
+                    if m > newest: newest = m
+                except OSError:
+                    continue
+        if newest > 0: return newest
+    return None
+
+def detect_branch(bead):
+    md = bead.get("metadata") or {}
+    for k in ("branch", "branch_name", "git_branch"):
+        if md.get(k): return md[k]
+    raw = run(["bd", "comments", "list", bead["id"], "--json"])
+    if not raw: return None
+    try: comments = json.loads(raw)
+    except Exception: return None
+    for c in comments:
+        body = c.get("body", "")
+        m = re.search(r'branch[:\s]+([A-Za-z0-9._/-]+)', body, re.I)
+        if m: return m.group(1)
+    return None
+
+try:
+    beads = json.loads(os.environ.get("LIVE_JSON") or "[]")
+except Exception:
+    beads = []
+
+stale = []
+for b in beads:
+    bid = b.get("id")
+    if not bid: continue
+    assignee = b.get("assignee") or b.get("assigned_to") or ""
+    branch = detect_branch(b)
+
+    sig = {
+        "comments": newest_comment_ts(bid),
+        "commits": branch_last_commit_ts(branch),
+        "updated_at": parse_iso(b.get("updated_at") or b.get("updatedAt")),
+        "worktree": worktree_newest_mtime(assignee),
+    }
+    present = [v for v in sig.values() if v is not None]
+    if not present:
+        newest = parse_iso(b.get("created_at") or b.get("createdAt"))
+    else:
+        newest = max(present)
+    if newest is None: continue
+
+    age = NOW - newest
+    if age < THRESHOLD: continue
+
+    stale.append({
+        "id": bid,
+        "title": b.get("title", ""),
+        "assignee": assignee,
+        "branch": branch or "",
+        "age_minutes": int(age // 60),
+        "signals": {k: (int(v) if v else None) for k, v in sig.items()},
+    })
+
+if FORMAT == "report":
+    if not stale:
+        print(f"stale-task-monitor: no stale beads (threshold {os.environ['THRESHOLD_MIN']}m)")
+    else:
+        print(f"stale-task-monitor: {len(stale)} stale bead(s) over {os.environ['THRESHOLD_MIN']}m:")
+        for s in stale:
+            print(f"  {s['id']} [{s['assignee']}] {s['age_minutes']}m idle — {s['title']}")
+else:
+    print(json.dumps(stale, indent=2))
+PYSTALE
+STALE_EOF
+chmod +x "$AGENTS_ROOT/agents/lib/stale-task-monitor.sh"
 
 # Write run-all.sh — workers in tabs or background; boss foreground in current terminal
 cat > "$AGENTS_ROOT/agents/run-all.sh" <<'RUNALLEOF'
@@ -3042,24 +3488,31 @@ WARP_EOF
 fi
 
 # ── Step 5: Commit agents/ on main so worktree branches inherit ───────────────
-echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "Step 5 — Committing agents/ + tooling on main"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
-# .worktreeinclude tells worktrunk which gitignored files to copy into each new
-# worktree. Env files + sessions are the typical inclusions; the .beads symlink
-# is created explicitly below.
+# .worktreeinclude refreshed in every mode; the auto-commit only fires on fresh
+# scaffold so update runs leave the diff staged for the developer to review.
 cat > "$MAIN_REPO/.worktreeinclude" <<'WTINCLUDE'
 .env
 .env.local
 .env.*.local
 WTINCLUDE
 
-cd "$MAIN_REPO"
-git add .
-git commit -q -m "🤖 Scaffold agents, skills, run-all, and provider configs" || \
-  echo "  note: nothing new to commit"
+if [[ "$UPDATE_MODE" == false ]]; then
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "Step 5 — Committing agents/ + tooling on main"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  cd "$MAIN_REPO"
+  git add .
+  git commit -q -m "🤖 Scaffold agents, skills, run-all, and provider configs" || \
+    echo "  note: nothing new to commit"
+else
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "Step 5 — Skipped (update mode): diff left unstaged for review"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "  inspect changes:  cd $MAIN_REPO && git status && git diff"
+  echo "  commit when ready: git add -A && git commit -m '🤖 Refresh agents/skills'"
+fi
 
 # ── Step 6: Initialize beads (bd) at the umbrella level ───────────────────────
 if [[ "$BD_AVAILABLE" == true ]]; then
@@ -3079,9 +3532,19 @@ if [[ "$BD_AVAILABLE" == true ]]; then
   # Init in STATE_ROOT (umbrella) so every worktree can symlink to the same db
   # and see the full board regardless of which branch is checked out.
   cd "$STATE_ROOT"
-  if BD_NON_INTERACTIVE=1 bd init "${BD_INIT_FLAGS[@]}" 2>/dev/null; then
+  _bd_ready=false
+  if [[ -d "$STATE_ROOT/.beads" ]]; then
+    echo "  ✓ beads already initialized at $STATE_ROOT/.beads — skipping bd init"
+    _bd_ready=true
+  elif BD_NON_INTERACTIVE=1 bd init "${BD_INIT_FLAGS[@]}" 2>/dev/null; then
     echo "  ✓ beads initialized at $STATE_ROOT/.beads"
+    _bd_ready=true
+  else
+    echo "  ⚠ bd init failed — skipping beads setup"
+    BD_AVAILABLE=false
+  fi
 
+  if [[ "$_bd_ready" == true ]]; then
     REQUIRED_STATUSES="ready_for_qa,in_qa,ready_for_test,in_test"
     CURRENT_STATUSES=$(bd config get status.custom 2>/dev/null || true)
     CURRENT_STATUSES=$(echo "$CURRENT_STATUSES" | tr -d ' "')
@@ -3100,9 +3563,6 @@ if [[ "$BD_AVAILABLE" == true ]]; then
     else
       echo "  ✓ custom statuses already configured"
     fi
-  else
-    echo "  ⚠ bd init failed — skipping beads setup"
-    BD_AVAILABLE=false
   fi
   cd "$MAIN_REPO"
 fi
@@ -3157,6 +3617,34 @@ if [[ "$WT_AVAILABLE" == true ]]; then
 fi
 
 # ── Final summary ─────────────────────────────────────────────────────────────
+if [[ "$UPDATE_MODE" == true ]]; then
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "✅ $PROJECT_NAME — agents/skills/lib refreshed"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo ""
+  echo "Refreshed:"
+  echo "  • agents/<role>/AGENTS.md + prompt.txt + run.sh   (all roles)"
+  echo "  • agents/lib/*.sh                                  (validator, uniqueness,"
+  echo "                                                      merge-and-close,"
+  echo "                                                      stale-task-monitor)"
+  echo "  • agents/run-all.sh                                (worker launcher)"
+  echo "  • agents/SKILLS.md                                 (master inventory)"
+  echo "  • .agents/skills/**                                (resync from sources)"
+  echo ""
+  echo "Next steps:"
+  echo "  cd $MAIN_REPO"
+  echo "  git status                            # review delta"
+  echo "  git diff agents/ .agents/             # inspect prompt/skill changes"
+  echo "  git add -A && git commit -m '🤖 Refresh agents/skills'"
+  echo ""
+  echo "Worker worktrees in $PARENT_ROOT/wt/ were preserved. Missing lanes"
+  echo "were created on agent/<lane> branches; existing lanes were left alone."
+  echo "After committing on main, propagate to lanes per your usual flow"
+  echo "(rebase agent/<lane> onto main, or recreate lanes if you want a clean reset)."
+  exit 0
+fi
+
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "✅ $PROJECT_NAME scaffolded successfully!"
