@@ -109,11 +109,14 @@ if [[ "$UPDATE_MODE" == false ]]; then
   done
 fi
 
-# Self-contained layout: $PARENT_ROOT/{main, wt/<lane>, .beads}.
-# MAIN_REPO is the source-of-truth working tree on branch `main`. Per-agent
-# worktrees live under wt/ on persistent `agent/<lane>` branches (created later
-# in this script via `git worktree add`). PROJECT_ROOT is kept as an alias for
-# MAIN_REPO so the downstream Python AGENTS.md generator keeps working.
+# Self-contained layout: $PARENT_ROOT/{main, wt/<bead-id>*, .beads}.
+# MAIN_REPO is the source-of-truth working tree on branch `main`. Every agent
+# process runs from main/. Worktrees are bead-scoped (not agent-scoped) and
+# ephemeral: agents/lib/spawn-bead-worktree.sh creates wt/<bead-id> on branch
+# bead/<bead-id> at claim time; merge-and-close.sh runs reap-bead-worktree.sh
+# on close to remove the wt + branch. The bead record itself is preserved
+# forever (closed status). PROJECT_ROOT is kept as an alias for MAIN_REPO so
+# the downstream Python AGENTS.md generator keeps working.
 #
 # Path resolution differs by mode:
 #   init    PARENT_ROOT = $cwd/$name (must NOT exist — fresh scaffold)
@@ -1745,14 +1748,14 @@ SHARED = """# Senior Engineering Standards (Mandatory)
 You operate at principal-engineer quality with balanced speed and rigor. These
 rules are part of the **definition of done** for every bead.
 
-## Worktree layout (worktrunk-managed)
+## Worktree layout (bead-scoped, ephemeral)
 
 - **Umbrella**: `{PARENT_ROOT}`
-- **Integration tree** (branch `main`): `{PROJECT_ROOT}` — boss, manager, product-owner, and tester land here.
-- **Per-agent worktrees** (branches `agent/<lane>`): `{PARENT_ROOT}/wt/<lane>` — dev-1/2/3, qa each get their own.
-- **Shared beads database**: `{PARENT_ROOT}/.beads` — symlinked into every lane, so `bd list` shows the full board from anywhere.
+- **Integration tree** (branch `main`): `{PROJECT_ROOT}` — every agent process starts here. main/ is the source of truth.
+- **Bead-scoped worktrees** (branches `bead/<bead-id>`): `{PARENT_ROOT}/wt/<bead-id>` — created on claim by `agents/lib/spawn-bead-worktree.sh <bead-id>`, reaped on close by `agents/lib/reap-bead-worktree.sh`. node_modules and .env files are symlinked from main so the wt is always wired up.
+- **Shared beads database**: `{PARENT_ROOT}/.beads` — symlinked into every bead wt automatically, so `bd list` shows the full board from anywhere.
 
-Use `git worktree list` (or `wt list`) to see the fleet. Never `cd` outside your assigned worktree; commit on your `agent/<lane>` branch and PR back to `main`.
+There are NO static per-agent worktrees. Use `git worktree list` (or `wt list`) to see the live bead worktrees. When you claim a bead that requires code work, spawn a wt with `bash agents/lib/spawn-bead-worktree.sh <bead-id>`, cd into the path it prints, commit on `bead/<bead-id>`, push a PR to main. On merge, qa runs `merge-and-close.sh` which reaps the wt + branch. The bead RECORD is preserved forever in `closed` status.
 
 ## Architecture and structure
 - **SOLID, pragmatically.** Single responsibility per file/function. Extend
@@ -2105,24 +2108,30 @@ Read `.agents/skills/beads/SKILL.md` for the full command reference and agent wo
 # Workflow
 1. Pick up only beads assigned to you: `bd list --assigned dev-1 --status open`.
 2. **Claim:** `bd update <bead-id> --claim --actor dev-1`. Sets status to `in_progress`.
-3. Read bead description fully + metadata: `impacted_surfaces`, `domains_touched`, `maestro_flows`, `migration_impact`, `auth_contract_impact`.
-4. Post a numbered implementation plan as a bead comment before writing code.
-5. **TDD:** for every behaviour change, write the failing test first, watch it fail for the right reason, then implement the minimal code to make it green, then refactor green.
-6. **Git:** create a feature branch from origin/main — name MUST contain bead id (`feat/dev-1-<bead-id>-slug`). Push the branch and open a PR referencing the bead id.
-7. Implement the slice. Reuse types/utilities from `packages/*`; do not silently duplicate logic.
-8. **Blocker flow:** if you hit a missing dep mid-implementation, park the bead:
+3. **Spawn the bead worktree.** Run:
+   ```
+   WT=$(bash agents/lib/spawn-bead-worktree.sh <bead-id>)
+   cd "$WT"
+   ```
+   This creates `$PARENT_ROOT/wt/<bead-id>` on branch `bead/<bead-id>` from main, wires .beads + node_modules + .env symlinks, and gives you an isolated working tree. ALL your work for this bead happens in `$WT`. Do not `cd` back to main while the bead is in_progress.
+4. Read bead description fully + metadata: `impacted_surfaces`, `domains_touched`, `maestro_flows`, `migration_impact`, `auth_contract_impact`.
+5. Post a numbered implementation plan as a bead comment before writing code.
+6. **TDD:** for every behaviour change, write the failing test first, watch it fail for the right reason, then implement the minimal code to make it green, then refactor green.
+7. **Git:** the branch is already `bead/<bead-id>` (created in step 3). Commit there. Push the branch and open a PR against `main` referencing the bead id.
+8. Implement the slice inside `$WT`. Reuse types/utilities from `packages/*`; do not silently duplicate logic.
+9. **Blocker flow:** if you hit a missing dep mid-implementation, park the bead:
    a. Commit WIP as `wip(blocker): <bead-id> parked`, push the branch.
    b. Write a parked comment with required format (Blocker:, Lane impact:, Acceptance:, Branch:, Done:, Remaining:, Resume hint:).
    c. Post the comment, clear your assignee, set status to `open` via bead comment.
-   d. Return to step 1.
-9. Run repository verification: `{BUILD_CMD}`, `{TEST_CMD}`, `{LINT_CMD}`. All must pass.
-10. Run the evidence validator: `bash agents/lib/evidence-validator.sh <bead-id>`. MUST exit 0.
-11. If the bead touches a UI app, `maestro_flows` metadata MUST be honoured.
-12. Comment DONE with verification outcomes, branch name, and PR URL:
-    `bd comments add <bead-id> --author dev-1 "DONE. Verified with: {BUILD_CMD}/{TEST_CMD}/{LINT_CMD} (all green). Branch: <name>. PR: <url>."`
-13. Mark ready for QA: `bd update <bead-id> --status ready_for_qa`.
-14. **Wait for qa.** When qa transitions to `in_qa` and PASSes, qa squash-merges + closes via `merge-and-close.sh`. If qa transitions to `in_progress` (FAIL), fix, re-run validator, transition to `ready_for_qa` again. 3 FAIL → `--tag arch` auto-applied → qa arbitration.
-15. **Stop at DONE — qa owns merge.** Do not merge yourself.
+   d. `cd` back to main/ and return to step 1. (The wt stays; whoever resumes the bead reuses it via the spawn helper — it is idempotent.)
+10. Run repository verification from `$WT`: `{BUILD_CMD}`, `{TEST_CMD}`, `{LINT_CMD}`. All must pass.
+11. Run the evidence validator: `bash agents/lib/evidence-validator.sh <bead-id>`. MUST exit 0.
+12. If the bead touches a UI app, `maestro_flows` metadata MUST be honoured.
+13. Comment DONE with verification outcomes, branch name, and PR URL:
+    `bd comments add <bead-id> --author dev-1 "DONE. Verified with: {BUILD_CMD}/{TEST_CMD}/{LINT_CMD} (all green). Branch: bead/<bead-id>. PR: <url>."`
+14. Mark ready for QA: `bd update <bead-id> --status ready_for_qa`.
+15. **Wait for qa.** When qa transitions to `in_qa` and PASSes, qa runs `merge-and-close.sh` which squash-merges, marks the bead `closed`, and reaps your wt + branch. If qa transitions to `in_progress` (FAIL), `cd` back into `$WT`, fix, re-run validator, transition to `ready_for_qa` again. 3 FAIL → `--tag arch` auto-applied → qa arbitration.
+16. **Stop at DONE — qa owns merge + reap.** Do not merge yourself. Do not remove your own wt.
 
 # Role-Specific Senior Standards
 - **Layer cleanly across the stack:** route → service → repository on the backend; data path single-source; auth at the boundary via composition; frontend depends on typed API not ad-hoc shapes.
@@ -2176,24 +2185,30 @@ Read `.agents/skills/beads/SKILL.md` for the full command reference and agent wo
 # Workflow
 1. Pick up only beads assigned to you: `bd list --assigned dev-2 --status open`.
 2. **Claim:** `bd update <bead-id> --claim --actor dev-2`. Sets status to `in_progress`.
-3. Read bead description fully + metadata: `impacted_surfaces`, `domains_touched`, `maestro_flows`, `migration_impact`, `auth_contract_impact`.
-4. Post a numbered implementation plan as a bead comment before writing code.
-5. **TDD:** for every behaviour change, write the failing test first, watch it fail for the right reason, then implement the minimal code to make it green, then refactor green.
-6. **Git:** create a feature branch from origin/main — name MUST contain bead id (`feat/dev-2-<bead-id>-slug`). Push the branch and open a PR referencing the bead id.
-7. Implement the slice. Reuse types/utilities from `packages/*`; do not silently duplicate logic.
-8. **Blocker flow:** if you hit a missing dep mid-implementation, park the bead:
+3. **Spawn the bead worktree.** Run:
+   ```
+   WT=$(bash agents/lib/spawn-bead-worktree.sh <bead-id>)
+   cd "$WT"
+   ```
+   This creates `$PARENT_ROOT/wt/<bead-id>` on branch `bead/<bead-id>` from main, wires .beads + node_modules + .env symlinks. ALL your work for this bead happens in `$WT`. Do not `cd` back to main while the bead is in_progress.
+4. Read bead description fully + metadata: `impacted_surfaces`, `domains_touched`, `maestro_flows`, `migration_impact`, `auth_contract_impact`.
+5. Post a numbered implementation plan as a bead comment before writing code.
+6. **TDD:** for every behaviour change, write the failing test first, watch it fail for the right reason, then implement the minimal code to make it green, then refactor green.
+7. **Git:** the branch is already `bead/<bead-id>` (created in step 3). Commit there. Push the branch and open a PR against `main` referencing the bead id.
+8. Implement the slice inside `$WT`. Reuse types/utilities from `packages/*`; do not silently duplicate logic.
+9. **Blocker flow:** if you hit a missing dep mid-implementation, park the bead:
    a. Commit WIP as `wip(blocker): <bead-id> parked`, push the branch.
    b. Write a parked comment with required format (Blocker:, Lane impact:, Acceptance:, Branch:, Done:, Remaining:, Resume hint:).
    c. Post the comment, clear your assignee, set status to `open` via bead comment.
-   d. Return to step 1.
-9. Run repository verification: `{BUILD_CMD}`, `{TEST_CMD}`, `{LINT_CMD}`. All must pass.
-10. Run the evidence validator: `bash agents/lib/evidence-validator.sh <bead-id>`. MUST exit 0.
-11. If the bead touches a UI app, `maestro_flows` metadata MUST be honoured.
-12. Comment DONE with verification outcomes, branch name, and PR URL:
-    `bd comments add <bead-id> --author dev-2 "DONE. Verified with: {BUILD_CMD}/{TEST_CMD}/{LINT_CMD} (all green). Branch: <name>. PR: <url>."`
-13. Mark ready for QA: `bd update <bead-id> --status ready_for_qa`.
-14. **Wait for qa.** When qa transitions to `in_qa` and PASSes, qa squash-merges + closes via `merge-and-close.sh`. If qa transitions to `in_progress` (FAIL), fix, re-run validator, transition to `ready_for_qa` again. 3 FAIL → `--tag arch` auto-applied → qa arbitration.
-15. **Stop at DONE — qa owns merge.** Do not merge yourself.
+   d. `cd` back to main/ and return to step 1. (The wt stays; whoever resumes the bead reuses it via the spawn helper — it is idempotent.)
+10. Run repository verification from `$WT`: `{BUILD_CMD}`, `{TEST_CMD}`, `{LINT_CMD}`. All must pass.
+11. Run the evidence validator: `bash agents/lib/evidence-validator.sh <bead-id>`. MUST exit 0.
+12. If the bead touches a UI app, `maestro_flows` metadata MUST be honoured.
+13. Comment DONE with verification outcomes, branch name, and PR URL:
+    `bd comments add <bead-id> --author dev-2 "DONE. Verified with: {BUILD_CMD}/{TEST_CMD}/{LINT_CMD} (all green). Branch: bead/<bead-id>. PR: <url>."`
+14. Mark ready for QA: `bd update <bead-id> --status ready_for_qa`.
+15. **Wait for qa.** When qa transitions to `in_qa` and PASSes, qa runs `merge-and-close.sh` which squash-merges, marks the bead `closed`, and reaps your wt + branch. If qa transitions to `in_progress` (FAIL), `cd` back into `$WT`, fix, re-run validator, transition to `ready_for_qa` again. 3 FAIL → `--tag arch` auto-applied → qa arbitration.
+16. **Stop at DONE — qa owns merge + reap.** Do not merge yourself. Do not remove your own wt.
 
 # Role-Specific Senior Standards
 - **Layer cleanly across the stack:** route → service → repository on the backend; data path single-source; auth at the boundary via composition; frontend depends on typed API not ad-hoc shapes.
@@ -2247,24 +2262,30 @@ Read `.agents/skills/beads/SKILL.md` for the full command reference and agent wo
 # Workflow
 1. Pick up only beads assigned to you: `bd list --assigned dev-3 --status open`.
 2. **Claim:** `bd update <bead-id> --claim --actor dev-3`. Sets status to `in_progress`.
-3. Read bead description fully + metadata: `impacted_surfaces`, `domains_touched`, `maestro_flows`, `migration_impact`, `auth_contract_impact`.
-4. Post a numbered implementation plan as a bead comment before writing code.
-5. **TDD:** for every behaviour change, write the failing test first, watch it fail for the right reason, then implement the minimal code to make it green, then refactor green.
-6. **Git:** create a feature branch from origin/main — name MUST contain bead id (`feat/dev-3-<bead-id>-slug`). Push the branch and open a PR referencing the bead id.
-7. Implement the slice. Reuse types/utilities from `packages/*`; do not silently duplicate logic.
-8. **Blocker flow:** if you hit a missing dep mid-implementation, park the bead:
+3. **Spawn the bead worktree.** Run:
+   ```
+   WT=$(bash agents/lib/spawn-bead-worktree.sh <bead-id>)
+   cd "$WT"
+   ```
+   This creates `$PARENT_ROOT/wt/<bead-id>` on branch `bead/<bead-id>` from main, wires .beads + node_modules + .env symlinks. ALL your work for this bead happens in `$WT`. Do not `cd` back to main while the bead is in_progress.
+4. Read bead description fully + metadata: `impacted_surfaces`, `domains_touched`, `maestro_flows`, `migration_impact`, `auth_contract_impact`.
+5. Post a numbered implementation plan as a bead comment before writing code.
+6. **TDD:** for every behaviour change, write the failing test first, watch it fail for the right reason, then implement the minimal code to make it green, then refactor green.
+7. **Git:** the branch is already `bead/<bead-id>` (created in step 3). Commit there. Push the branch and open a PR against `main` referencing the bead id.
+8. Implement the slice inside `$WT`. Reuse types/utilities from `packages/*`; do not silently duplicate logic.
+9. **Blocker flow:** if you hit a missing dep mid-implementation, park the bead:
    a. Commit WIP as `wip(blocker): <bead-id> parked`, push the branch.
    b. Write a parked comment with required format (Blocker:, Lane impact:, Acceptance:, Branch:, Done:, Remaining:, Resume hint:).
    c. Post the comment, clear your assignee, set status to `open` via bead comment.
-   d. Return to step 1.
-9. Run repository verification: `{BUILD_CMD}`, `{TEST_CMD}`, `{LINT_CMD}`. All must pass.
-10. Run the evidence validator: `bash agents/lib/evidence-validator.sh <bead-id>`. MUST exit 0.
-11. If the bead touches a UI app, `maestro_flows` metadata MUST be honoured.
-12. Comment DONE with verification outcomes, branch name, and PR URL:
-    `bd comments add <bead-id> --author dev-3 "DONE. Verified with: {BUILD_CMD}/{TEST_CMD}/{LINT_CMD} (all green). Branch: <name>. PR: <url>."`
-13. Mark ready for QA: `bd update <bead-id> --status ready_for_qa`.
-14. **Wait for qa.** When qa transitions to `in_qa` and PASSes, qa squash-merges + closes via `merge-and-close.sh`. If qa transitions to `in_progress` (FAIL), fix, re-run validator, transition to `ready_for_qa` again. 3 FAIL → `--tag arch` auto-applied → qa arbitration.
-15. **Stop at DONE — qa owns merge.** Do not merge yourself.
+   d. `cd` back to main/ and return to step 1. (The wt stays; whoever resumes the bead reuses it via the spawn helper — it is idempotent.)
+10. Run repository verification from `$WT`: `{BUILD_CMD}`, `{TEST_CMD}`, `{LINT_CMD}`. All must pass.
+11. Run the evidence validator: `bash agents/lib/evidence-validator.sh <bead-id>`. MUST exit 0.
+12. If the bead touches a UI app, `maestro_flows` metadata MUST be honoured.
+13. Comment DONE with verification outcomes, branch name, and PR URL:
+    `bd comments add <bead-id> --author dev-3 "DONE. Verified with: {BUILD_CMD}/{TEST_CMD}/{LINT_CMD} (all green). Branch: bead/<bead-id>. PR: <url>."`
+14. Mark ready for QA: `bd update <bead-id> --status ready_for_qa`.
+15. **Wait for qa.** When qa transitions to `in_qa` and PASSes, qa runs `merge-and-close.sh` which squash-merges, marks the bead `closed`, and reaps your wt + branch. If qa transitions to `in_progress` (FAIL), `cd` back into `$WT`, fix, re-run validator, transition to `ready_for_qa` again. 3 FAIL → `--tag arch` auto-applied → qa arbitration.
+16. **Stop at DONE — qa owns merge + reap.** Do not merge yourself. Do not remove your own wt.
 
 # Role-Specific Senior Standards
 - **Layer cleanly across the stack:** route → service → repository on the backend; data path single-source; auth at the boundary via composition; frontend depends on typed API not ad-hoc shapes.
@@ -2432,7 +2453,6 @@ LANE_DIR="$(pwd)"
 ROOT_DIR="$(cd ../.. && pwd)"             # main working tree (branch: main)
 PARENT_DIR="$(cd "$ROOT_DIR/.." && pwd)"  # umbrella: holds main/, wt/, .beads/
 _AGENT="$(basename "$LANE_DIR")"
-WORKTREE_DIR="$PARENT_DIR/wt/$_AGENT"     # per-agent worktree (branch: agent/<lane>)
 
 _resolve_cli() {
   if command -v pi >/dev/null 2>&1; then
@@ -2447,17 +2467,11 @@ PI_BIN="$(_resolve_cli)" || exit 127
 _PROMPT_FILE="$LANE_DIR/prompt.txt"
 _SYSTEM_PROMPT="$(cat "$_PROMPT_FILE")"
 
-# Boss owns the integration tree (main). Workers operate inside their own
-# worktree on branch agent/<lane>; if it's missing (older scaffolds), fall
-# back to main with a loud warning so the lane still boots.
-if [[ "$_AGENT" == "boss" ]]; then
-  cd "$ROOT_DIR"
-elif [[ -d "$WORKTREE_DIR" ]]; then
-  cd "$WORKTREE_DIR"
-else
-  echo "[$_AGENT] worktree missing at $WORKTREE_DIR — falling back to $ROOT_DIR" >&2
-  cd "$ROOT_DIR"
-fi
+# All agent processes start in main/. There are no static lane worktrees in
+# this model — worktrees are bead-scoped and spawned on claim by the agent
+# itself via agents/lib/spawn-bead-worktree.sh, then reaped on close by
+# agents/lib/reap-bead-worktree.sh. main/ is the source of truth.
+cd "$ROOT_DIR"
 
 # Per-lane session storage (boss persistent, workers ephemeral).
 _SESSION_DIR="$LANE_DIR/.pi-sessions"
@@ -2846,6 +2860,114 @@ fi
 exit 0
 REAP_EOF
 chmod +x "$AGENTS_ROOT/agents/lib/reap-bead-worktree.sh"
+
+# Write spawn-bead-worktree.sh — create a bead-scoped worktree on claim.
+cat > "$AGENTS_ROOT/agents/lib/spawn-bead-worktree.sh" <<'SPAWN_EOF'
+#!/usr/bin/env bash
+# spawn-bead-worktree.sh — create $PARENT_ROOT/wt/<bead-id> on branch
+# bead/<bead-id> from main. Wires .beads symlink + node_modules symlink so
+# the bead wt is a working environment with the latest deps already wired.
+#
+# Usage:
+#   bash agents/lib/spawn-bead-worktree.sh <bead-id>
+# Stdout (on success): absolute path to the new worktree (one line).
+# Stderr: progress + warnings.
+# Exit 0 if wt exists or was created; non-zero on hard failure.
+#
+# Idempotent: if wt/<bead-id> already exists on the right branch, prints its
+# path and exits 0.
+set -euo pipefail
+
+BEAD_ID="${1:-}"
+if [[ -z "$BEAD_ID" ]]; then
+  echo "spawn-bead-worktree: usage: bash agents/lib/spawn-bead-worktree.sh <bead-id>" >&2
+  exit 1
+fi
+
+# Sanitize bead id for use as a path/branch component.
+SAFE_ID=$(echo "$BEAD_ID" | tr -c 'A-Za-z0-9._-' '-' | sed 's/^-*//;s/-*$//')
+if [[ -z "$SAFE_ID" ]]; then
+  echo "spawn-bead-worktree: bead id '$BEAD_ID' has no usable characters" >&2
+  exit 1
+fi
+
+# Locate umbrella root: ascend from main repo until we find a sibling .beads or
+# a wt/ directory. Default: parent of MAIN_REPO.
+MAIN_REPO=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+if [[ ! -d "$MAIN_REPO" ]]; then
+  echo "spawn-bead-worktree: not inside a git repo" >&2
+  exit 1
+fi
+PARENT_ROOT="$(cd "$MAIN_REPO/.." && pwd)"
+WT_DIR="$PARENT_ROOT/wt"
+WT_PATH="$WT_DIR/$SAFE_ID"
+BRANCH="bead/$SAFE_ID"
+
+mkdir -p "$WT_DIR"
+
+# If a wt for this bead already exists on the correct branch, reuse it.
+if [[ -d "$WT_PATH/.git" || -f "$WT_PATH/.git" ]]; then
+  CURRENT_BRANCH=$(git -C "$WT_PATH" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+  if [[ "$CURRENT_BRANCH" == "$BRANCH" ]]; then
+    echo "spawn-bead-worktree: worktree already exists at $WT_PATH (branch $BRANCH)" >&2
+    echo "$WT_PATH"
+    exit 0
+  else
+    echo "spawn-bead-worktree: $WT_PATH exists on branch '$CURRENT_BRANCH', expected '$BRANCH' — refusing" >&2
+    exit 2
+  fi
+fi
+
+# Make sure main is current locally before branching off it.
+git -C "$MAIN_REPO" fetch --quiet origin main 2>/dev/null || true
+
+# Create branch if it doesn't exist yet, then add the worktree.
+if git -C "$MAIN_REPO" show-ref --verify --quiet "refs/heads/$BRANCH"; then
+  echo "spawn-bead-worktree: branch $BRANCH already exists — attaching wt" >&2
+  if ! git -C "$MAIN_REPO" worktree add "$WT_PATH" "$BRANCH" >&2; then
+    echo "spawn-bead-worktree: git worktree add failed" >&2
+    exit 3
+  fi
+else
+  if ! git -C "$MAIN_REPO" worktree add -b "$BRANCH" "$WT_PATH" main >&2; then
+    echo "spawn-bead-worktree: git worktree add -b failed" >&2
+    exit 3
+  fi
+fi
+
+# Symlink .beads so bd commands run from the wt see the umbrella database.
+if [[ -d "$PARENT_ROOT/.beads" ]]; then
+  rm -rf "$WT_PATH/.beads" 2>/dev/null || true
+  ln -snf "../../.beads" "$WT_PATH/.beads"
+fi
+
+# Symlink node_modules so the wt has the latest installed deps without a fresh
+# install. main is the source of truth for deps; if a bead needs new deps it
+# updates main/package.json and main/node_modules (which we symlink to), so
+# parallel beads automatically pick them up. Use a symlink (not a copy) to
+# keep the wt cheap and always-current.
+if [[ -d "$MAIN_REPO/node_modules" ]]; then
+  if [[ -e "$WT_PATH/node_modules" && ! -L "$WT_PATH/node_modules" ]]; then
+    echo "spawn-bead-worktree: $WT_PATH/node_modules already exists and is not a symlink — leaving alone" >&2
+  else
+    ln -snf "../../main/node_modules" "$WT_PATH/node_modules"
+  fi
+fi
+
+# Symlink workspace-level lockfile + .env files so build/test/runtime work the
+# same as in main. Only symlink files that exist; do not invent new ones.
+for _shared in .env .env.local .env.development .env.production yarn.lock package-lock.json pnpm-lock.yaml bun.lockb; do
+  _src="$MAIN_REPO/$_shared"
+  _dst="$WT_PATH/$_shared"
+  if [[ -e "$_src" && ! -e "$_dst" ]]; then
+    ln -snf "../../main/$_shared" "$_dst"
+  fi
+done
+
+echo "$WT_PATH"
+exit 0
+SPAWN_EOF
+chmod +x "$AGENTS_ROOT/agents/lib/spawn-bead-worktree.sh"
 
 # Write stale-task-monitor.sh — detect hanging in_progress beads.
 cat > "$AGENTS_ROOT/agents/lib/stale-task-monitor.sh" <<'STALE_EOF'
@@ -3577,43 +3699,47 @@ if [[ -d "$STATE_ROOT/.beads" ]]; then
   fi
 fi
 
-# ── Step 7: Create per-agent worktrees under wt/ ──────────────────────────────
+# ── Step 7: Prepare wt/ for bead-scoped worktrees ─────────────────────────────
+# Worktrees are now BEAD-SCOPED, not agent-scoped. There are no static lanes.
+# Every agent process runs in main/. When an agent claims a bead that needs
+# branch isolation (devs always; qa optionally for local review), it calls
+# `agents/lib/spawn-bead-worktree.sh <bead-id>` to create $PARENT_ROOT/wt/<id>
+# on branch bead/<id> from main, works there, then merge-and-close.sh reaps
+# the wt + branch on close. The bead RECORD itself is preserved forever.
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "Step 7 — Creating per-agent worktrees at $PARENT_ROOT/wt/"
+echo "Step 7 — Preparing $PARENT_ROOT/wt/ for bead-scoped worktrees"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-WORKTREE_LANES=(dev-1 dev-2 dev-3 manager product-owner qa tester)
 mkdir -p "$PARENT_ROOT/wt"
 
+# Garbage-collect any pre-existing static lane wts from older scaffolds so the
+# layout converges on the bead-scoped model. Only touches /wt/<name> where
+# <name> matches a known legacy agent identifier; never main/, never wt/<bead-id>.
 cd "$MAIN_REPO"
-for _lane in "${WORKTREE_LANES[@]}"; do
-  _wt_path="$PARENT_ROOT/wt/$_lane"
-  _wt_branch="agent/$_lane"
-  if [[ -e "$_wt_path" ]]; then
-    echo "  • $_lane: worktree already exists at $_wt_path — skipping"
-    continue
+LEGACY_LANES=(dev-1 dev-2 dev-3 dev-4 dev-5 manager product-owner qa tester boss)
+for _lane in "${LEGACY_LANES[@]}"; do
+  _legacy_wt="$PARENT_ROOT/wt/$_lane"
+  _legacy_branch="agent/$_lane"
+  if [[ -d "$_legacy_wt" ]]; then
+    echo "  • removing legacy static lane wt: $_legacy_wt"
+    git worktree remove --force "$_legacy_wt" 2>/dev/null || rm -rf "$_legacy_wt"
+    git worktree prune 2>/dev/null || true
   fi
-  if git worktree add -b "$_wt_branch" "$_wt_path" main >/dev/null 2>&1; then
-    echo "  ✓ $_lane: branch $_wt_branch → $_wt_path"
-  else
-    echo "  ⚠ $_lane: 'git worktree add' failed — lane will fall back to main"
-    continue
-  fi
-  # Each worktree shares the umbrella beads db via symlink. Beads stores its
-  # state in .beads/ at the working-tree root, so a relative symlink up two
-  # levels lands on $PARENT_ROOT/.beads regardless of the lane name.
-  if [[ -d "$STATE_ROOT/.beads" ]]; then
-    rm -rf "$_wt_path/.beads" 2>/dev/null || true
-    ln -snf "../../.beads" "$_wt_path/.beads"
+  if git show-ref --verify --quiet "refs/heads/$_legacy_branch"; then
+    git branch -D "$_legacy_branch" 2>/dev/null \
+      && echo "  • deleted legacy branch $_legacy_branch" \
+      || echo "  • could not delete branch $_legacy_branch (may be checked out elsewhere)"
   fi
 done
 
-# Hand worktrunk a hint about where its template should drop new worktrees.
-# Worktrunk reads `git worktree list` for existing trees regardless, so even
-# without config the lanes show up under `wt list`.
+echo "  ✓ wt/ is ready. Worktrees are created per-bead at claim time and reaped"
+echo "    on close. Convention: wt/<bead-id> on branch bead/<bead-id>."
+echo "    Spawn helper: bash agents/lib/spawn-bead-worktree.sh <bead-id>"
+echo "    Reaper:       bash agents/lib/reap-bead-worktree.sh --bead <bead-id>"
+
 if [[ "$WT_AVAILABLE" == true ]]; then
-  echo "  ✓ wt list will show the lanes; run 'wt list --full' from $MAIN_REPO for CI status"
+  echo "  ✓ 'wt list --full' from $MAIN_REPO shows live bead worktrees"
 fi
 
 # ── Final summary ─────────────────────────────────────────────────────────────
@@ -3627,6 +3753,8 @@ if [[ "$UPDATE_MODE" == true ]]; then
   echo "  • agents/<role>/AGENTS.md + prompt.txt + run.sh   (all roles)"
   echo "  • agents/lib/*.sh                                  (validator, uniqueness,"
   echo "                                                      merge-and-close,"
+  echo "                                                      spawn-bead-worktree,"
+  echo "                                                      reap-bead-worktree,"
   echo "                                                      stale-task-monitor)"
   echo "  • agents/run-all.sh                                (worker launcher)"
   echo "  • agents/SKILLS.md                                 (master inventory)"
@@ -3638,10 +3766,10 @@ if [[ "$UPDATE_MODE" == true ]]; then
   echo "  git diff agents/ .agents/             # inspect prompt/skill changes"
   echo "  git add -A && git commit -m '🤖 Refresh agents/skills'"
   echo ""
-  echo "Worker worktrees in $PARENT_ROOT/wt/ were preserved. Missing lanes"
-  echo "were created on agent/<lane> branches; existing lanes were left alone."
-  echo "After committing on main, propagate to lanes per your usual flow"
-  echo "(rebase agent/<lane> onto main, or recreate lanes if you want a clean reset)."
+  echo "Worktree model: bead-scoped. There are no static lanes. Each bead spawns"
+  echo "$PARENT_ROOT/wt/<bead-id> on branch bead/<bead-id> at claim time and is"
+  echo "reaped on close. Any legacy wt/<agent> directories from older scaffolds"
+  echo "were removed during this update."
   exit 0
 fi
 
@@ -3650,9 +3778,9 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "✅ $PROJECT_NAME scaffolded successfully!"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
-echo "📁 Project structure (worktree-per-agent):"
+echo "📁 Project structure (bead-scoped worktrees):"
 echo "  $PROJECT_NAME/"
-echo "  ├── main/                     # main repo, branch 'main' (integration)"
+echo "  ├── main/                     # main repo, branch 'main' (source of truth)"
 echo "  │   ├── apps/"
 if [[ "$FRONTEND" == "expo" ]]; then
 echo "  │   │   ├── api/              # Hono + @geekmidas/constructs"
@@ -3666,17 +3794,16 @@ fi
 echo "  │   ├── packages/{models,ui}/"
 echo "  │   ├── agents/               # Beads agent infrastructure"
 echo "  │   │   ├── boss/ manager/ product-owner/ dev-{1,2,3}/ qa/ tester/"
-echo "  │   │   ├── lib/  SKILLS.md  run-all.sh"
+echo "  │   │   ├── lib/              # spawn/reap helpers + validator + monitor"
+echo "  │   │   └── SKILLS.md  run-all.sh"
 echo "  │   ├── .agents/skills/       # Repo-local skill definitions"
-echo "  │   ├── .worktreeinclude      # Files worktrunk copies into new worktrees"
+echo "  │   ├── .worktreeinclude      # Files copied into each new bead wt"
 echo "  │   └── .beads -> ../.beads   # Symlink to the umbrella beads db"
-echo "  ├── wt/                       # Per-agent worktrees (branch 'agent/<lane>')"
-echo "  │   ├── dev-1/   .beads -> ../../.beads"
-echo "  │   ├── dev-2/   .beads -> ../../.beads"
-echo "  │   ├── dev-3/   .beads -> ../../.beads"
-echo "  │   ├── manager/         product-owner/"
-echo "  │   ├── qa/              tester/"
-echo "  └── .beads/                   # Shared beads db (visible from every lane)"
+echo "  ├── wt/                       # Bead worktrees (created on claim, reaped on close)"
+echo "  │   └── <bead-id>/            # Ephemeral; branch 'bead/<bead-id>'"
+echo "  │       ├── .beads -> ../../.beads"
+echo "  │       └── node_modules -> ../../main/node_modules"
+echo "  └── .beads/                   # Shared beads db (visible from every wt)"
 echo ""
 echo "📋 Next steps:"
 echo ""
@@ -3695,7 +3822,8 @@ echo ""
 echo "  # Start database services"
 echo "  docker compose up -d"
 echo ""
-echo "  # Boot the swarm. Workers cd into their own wt/<lane>; boss runs in main."
+echo "  # Boot the swarm. Every agent process runs from main/. Devs spawn a"
+echo "  # bead-scoped wt on claim and reap it on close — no static lanes."
 echo "  bash agents/run-all.sh"
 echo "  bash agents/run-all.sh --mode splits      # Ghostty splits only"
 echo "  bash agents/run-all.sh --mode tabs        # new tab per worker"
@@ -3704,12 +3832,13 @@ echo ""
 echo "  # Or start the dev server (from main/)"
 echo "  $PKG_MANAGER dev"
 echo ""
-echo "Agent roles & worktrees:"
-echo "  • boss (main/)                  — chat with developer; files intake beads to manager"
-echo "  • manager (wt/manager)          — receives intake; hands to product-owner; patrols"
-echo "  • product-owner (wt/product-owner) — decomposes intake into 4-12+ vertical-slice beads"
-echo "  • dev-1/2/3 (wt/dev-N)          — implement one bead end-to-end on agent/dev-N"
-echo "  • qa (wt/qa)                    — code review + architecture + merge + knowledge capture"
-echo "  • tester (wt/tester)            — post-merge integration tester on main"
+echo "Agent roles (all processes start in main/):"
+echo "  • boss             — chat with developer; files intake beads to manager"
+echo "  • manager          — receives intake; hands to product-owner; patrols stale beads"
+echo "  • product-owner    — decomposes intake into 4-12+ vertical-slice beads"
+echo "  • dev-1 / dev-2 / dev-3 — on claim, spawn wt/<bead-id> via"
+echo "                     agents/lib/spawn-bead-worktree.sh, work there, push PR"
+echo "  • qa               — review PR, run merge-and-close.sh (merge + close + reap wt)"
+echo "  • tester           — post-merge integration tester (runs from main/)"
 echo ""
-echo "Read main/agents/SKILLS.md and your lane's main/agents/<lane>/AGENTS.md at session start."
+echo "Read main/agents/SKILLS.md and your role's main/agents/<role>/AGENTS.md at session start."
