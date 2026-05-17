@@ -1,6 +1,6 @@
 {
   "name": "create-jmrsquared-website-template",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Scaffold a Cloudflare Pages or Firebase Hosting-ready Vite website with Git and GitHub Actions deployment setup.",
   "type": "module",
   "packageManager": "yarn@4.13.0",

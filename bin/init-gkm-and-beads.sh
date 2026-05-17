@@ -1443,6 +1443,24 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 
 AGENTS_ROOT="$PROJECT_ROOT"
 
+# Shell-level mirrors of the per-pkg-manager command strings. Python's
+# AGENTS.md generator computes the same values; the lib-script heredocs
+# below interpolate these bash vars at scaffold time so the generated
+# lib scripts have the right commands baked in.
+case "$PKG_MANAGER" in
+  npm)
+    BUILD_CMD="npm run build"
+    TEST_CMD="npm test"
+    LINT_CMD="npm run lint:fix"
+    ;;
+  *)
+    BUILD_CMD="$PKG_MANAGER build"
+    TEST_CMD="$PKG_MANAGER test"
+    LINT_CMD="$PKG_MANAGER lint:fix"
+    ;;
+esac
+export BUILD_CMD TEST_CMD LINT_CMD
+
 # Install beads CLI if not present
 install_bd() {
   if command -v bd >/dev/null 2>&1; then
