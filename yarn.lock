@@ -10,5 +10,6 @@ __metadata:
   resolution: "create-jmrsquared-website-template@workspace:."
   bin:
     create-jmrsquared-website-template: ./bin/create.js
+    update-jmrsquared-website-template: ./bin/update.js
   languageName: unknown
   linkType: soft
