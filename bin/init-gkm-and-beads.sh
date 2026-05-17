@@ -2590,10 +2590,25 @@ for _agent in ["boss", "manager", "product-owner", "dev-1", "dev-2", "dev-3", "q
 
 PYEOF
 
-# ── Write run.sh for each agent (pi CLI: boss interactive, workers -p loop) ──
+# Persist the init-time provider choice as the scaffold default.
+# run.sh reads it if PROVIDER env is unset. Override at runtime via:
+#   PROVIDER=<name> bash agents/<agent>/run.sh
+#   bash agents/run-all.sh --provider <name>
+#   bash agents/run-all.sh --<agent>-provider <name>
+SCAFFOLD_PROVIDER_DEFAULT="${PROVIDER:-pi}"
+echo "$SCAFFOLD_PROVIDER_DEFAULT" > "$AGENTS_ROOT/agents/provider.default"
+
+# ── Write run.sh for each agent (multi-provider: pi / claude / codex / cursor-agent) ──
 for AGENT in "${AGENT_LIST[@]}"; do
   cat > "${AGENTS_ROOT}/agents/$AGENT/run.sh" << 'RUNEOF'
 #!/usr/bin/env bash
+# Multi-provider agent runner. Resolves which CLI to invoke from (in order):
+#   1. $PROVIDER env var (set by run-all.sh --provider / --<agent>-provider)
+#   2. $AGENTS_ROOT/agents/provider.default (written at scaffold time)
+#   3. "pi" as last resort
+#
+# Supported providers: pi, claude, codex, cursor-agent
+# Boss is interactive; workers run a non-interactive patrol loop.
 export PATH="${HOME}/.local/bin:${HOME}/.cursor/bin:/opt/homebrew/bin:/usr/local/bin:${PATH}"
 
 cd "$(dirname "$0")"
@@ -2601,58 +2616,115 @@ LANE_DIR="$(pwd)"
 ROOT_DIR="$(cd ../.. && pwd)"             # main working tree (branch: main)
 PARENT_DIR="$(cd "$ROOT_DIR/.." && pwd)"  # umbrella: holds main/, wt/, .beads/
 _AGENT="$(basename "$LANE_DIR")"
+_AGENTS_DIR="$(cd .. && pwd)"             # $ROOT_DIR/agents
 
-_resolve_cli() {
-  if command -v pi >/dev/null 2>&1; then
-    command -v pi
-    return 0
-  fi
-  echo "[$_AGENT] pi CLI not found in PATH" >&2
-  return 1
-}
+# Resolve provider: env > scaffold default > "pi".
+PROVIDER="${PROVIDER:-}"
+if [[ -z "$PROVIDER" && -f "$_AGENTS_DIR/provider.default" ]]; then
+  PROVIDER="$(cat "$_AGENTS_DIR/provider.default" | tr -d '[:space:]')"
+fi
+PROVIDER="${PROVIDER:-pi}"
 
-PI_BIN="$(_resolve_cli)" || exit 127
 _PROMPT_FILE="$LANE_DIR/prompt.txt"
+if [[ ! -f "$_PROMPT_FILE" ]]; then
+  echo "[$_AGENT] prompt.txt missing at $_PROMPT_FILE" >&2
+  exit 1
+fi
 _SYSTEM_PROMPT="$(cat "$_PROMPT_FILE")"
 
-# All agent processes start in main/. There are no static lane worktrees in
-# this model — worktrees are bead-scoped and spawned on claim by the agent
-# itself via agents/lib/spawn-bead-worktree.sh, then reaped on close by
-# agents/lib/reap-bead-worktree.sh. main/ is the source of truth.
+# All agent processes start in main/. Worktrees are bead-scoped and spawned
+# on claim by the agent itself via agents/lib/spawn-bead-worktree.sh, then
+# reaped on close. main/ is the source of truth.
 cd "$ROOT_DIR"
 
-# Per-lane session storage (boss persistent, workers ephemeral).
-_SESSION_DIR="$LANE_DIR/.pi-sessions"
+# Per-lane session storage. Boss persistent; workers ephemeral (no-session).
+_SESSION_DIR="$LANE_DIR/.${PROVIDER}-sessions"
 mkdir -p "$_SESSION_DIR"
 
-# Boss: interactive — single attached pi session, no -p, no loop.
-# --continue resumes the most recent boss session if one exists; otherwise pi
-# starts a fresh session and writes it to $_SESSION_DIR.
-if [[ "$_AGENT" == "boss" ]]; then
-  echo "[pi-agent][boss] launching interactive session in $ROOT_DIR"
-  _BOSS_ARGS=(
-    --append-system-prompt "$_SYSTEM_PROMPT"
-    --session-dir "$_SESSION_DIR"
-  )
-  if compgen -G "$_SESSION_DIR/*.json" >/dev/null; then
-    _BOSS_ARGS+=(--continue)
-  fi
-  exec "$PI_BIN" "${_BOSS_ARGS[@]}"
+# Worker task line is the same across providers — only the CLI invocation differs.
+_WORKER_TASK="patrol your lane: pick up any work assigned to $_AGENT, follow your AGENTS.md workflow, then exit."
+
+# Resolve binary path for the chosen provider.
+_resolve_bin() {
+  case "$PROVIDER" in
+    pi)               command -v pi ;;
+    claude)           command -v claude ;;
+    codex)            command -v codex ;;
+    cursor-agent|cursor) command -v cursor-agent || command -v cursor ;;
+    *) echo "[$_AGENT] unknown provider '$PROVIDER' (expected pi|claude|codex|cursor-agent)" >&2
+       return 2 ;;
+  esac
+}
+
+PROVIDER_BIN="$(_resolve_bin)" || exit $?
+if [[ -z "$PROVIDER_BIN" ]]; then
+  echo "[$_AGENT] $PROVIDER CLI not found in PATH" >&2
+  exit 127
 fi
 
-# Workers: non-interactive patrol loop with ephemeral sessions.
-echo "[pi-agent][$_AGENT] starting staged 10s..."
+# Per-provider boss (interactive) launcher.
+_launch_boss() {
+  echo "[$PROVIDER][$_AGENT] launching interactive session in $ROOT_DIR"
+  case "$PROVIDER" in
+    pi)
+      local args=(--append-system-prompt "$_SYSTEM_PROMPT" --session-dir "$_SESSION_DIR")
+      if compgen -G "$_SESSION_DIR/*.json" >/dev/null; then
+        args+=(--continue)
+      fi
+      exec "$PROVIDER_BIN" "${args[@]}"
+      ;;
+    claude)
+      # Claude Code: --append-system-prompt augments the built-in prompt; no
+      # session-dir flag, but --resume picks up the latest session in cwd.
+      local args=(--append-system-prompt "$_SYSTEM_PROMPT")
+      exec "$PROVIDER_BIN" "${args[@]}"
+      ;;
+    codex)
+      # Codex CLI: interactive `codex` command; passes system prompt via env.
+      exec env CODEX_SYSTEM_PROMPT="$_SYSTEM_PROMPT" "$PROVIDER_BIN"
+      ;;
+    cursor-agent|cursor)
+      exec "$PROVIDER_BIN" chat
+      ;;
+  esac
+}
+
+# Per-provider worker (one patrol pass; non-interactive).
+_run_worker_once() {
+  case "$PROVIDER" in
+    pi)
+      "$PROVIDER_BIN" -p --no-session \
+        --append-system-prompt "$_SYSTEM_PROMPT" \
+        "$_WORKER_TASK" || true
+      ;;
+    claude)
+      "$PROVIDER_BIN" -p "$_WORKER_TASK" \
+        --append-system-prompt "$_SYSTEM_PROMPT" \
+        --output-format text || true
+      ;;
+    codex)
+      env CODEX_SYSTEM_PROMPT="$_SYSTEM_PROMPT" \
+        "$PROVIDER_BIN" exec "$_WORKER_TASK" || true
+      ;;
+    cursor-agent|cursor)
+      "$PROVIDER_BIN" -p "$_WORKER_TASK" \
+        --system-prompt "$_SYSTEM_PROMPT" || true
+      ;;
+  esac
+}
+
+if [[ "$_AGENT" == "boss" ]]; then
+  _launch_boss
+fi
+
+echo "[$PROVIDER][$_AGENT] worker starting (staged 10s)..."
 sleep 10
 
-_LOOP="${PI_AGENT_LOOP_SLEEP:-45}"
+_LOOP="${AGENT_LOOP_SLEEP:-${PI_AGENT_LOOP_SLEEP:-45}}"
 while true; do
-  echo "[pi-agent][$_AGENT] patrol $(date -u +"%Y-%m-%dT%H:%M:%SZ")..."
-  "$PI_BIN" \
-    -p \
-    --no-session \
-    --append-system-prompt "$_SYSTEM_PROMPT" \
-    "patrol your lane: pick up any work assigned to $_AGENT, follow your AGENTS.md workflow, then exit." || true
-  echo "[pi-agent][$_AGENT] sleeping ${_LOOP}s (override with env PI_AGENT_LOOP_SLEEP)"
+  echo "[$PROVIDER][$_AGENT] patrol $(date -u +"%Y-%m-%dT%H:%M:%SZ")..."
+  _run_worker_once
+  echo "[$PROVIDER][$_AGENT] sleeping ${_LOOP}s (override with env AGENT_LOOP_SLEEP)"
   sleep "$_LOOP"
 done
 RUNEOF
@@ -3445,6 +3517,7 @@ cat > "$AGENTS_ROOT/agents/run-all.sh" <<'RUNALLEOF'
 # run-all.sh — spawn worker agent loops, then run boss interactively in this terminal.
 #
 # Usage: bash agents/run-all.sh [--mode auto|splits|tabs|background] [--no-boss]
+#                                [--provider <name>] [--<agent>-provider <name>]
 #
 # Modes:
 #   auto        DEFAULT. Splits the current Ghostty window into one pane per
@@ -3454,6 +3527,16 @@ cat > "$AGENTS_ROOT/agents/run-all.sh" <<'RUNALLEOF'
 #   tabs        Force one new tab per worker (macOS Ghostty / iTerm2 /
 #               Terminal.app).
 #   background  Run each worker as a backgrounded child of this script.
+#
+# Providers:
+#   --provider <name>           Default provider for ALL agents this run.
+#                               Names: pi | claude | codex | cursor-agent
+#   --<agent>-provider <name>   Override provider for one agent. Examples:
+#                                 --dev-1-provider claude
+#                                 --boss-provider codex
+#                                 --qa-provider cursor-agent
+#   Resolution order per agent: --<agent>-provider  >  --provider  >
+#                               agents/provider.default  >  "pi"
 #
 # Boss:
 #   By default boss runs in the foreground of THIS terminal so the developer can
@@ -3466,6 +3549,19 @@ cd "$ROOT"
 
 MODE="auto"
 NO_BOSS=0
+GLOBAL_PROVIDER=""
+
+# Per-agent provider overrides stored as "agent=provider" entries so this
+# script stays compatible with macOS's bash 3.2 (no associative arrays).
+AGENT_PROVIDER_ENTRIES=()
+
+_set_agent_provider() {
+  local key="$1" val="$2"
+  # Strip "-provider" suffix from key (e.g. "dev-1-provider" -> "dev-1").
+  local agent="${key%-provider}"
+  AGENT_PROVIDER_ENTRIES+=("$agent=$val")
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --mode)        MODE="${2:-auto}";        shift 2 ;;
@@ -3475,8 +3571,20 @@ while [[ $# -gt 0 ]]; do
     --tabs)        MODE="tabs";             shift ;;
     --background)  MODE="background";       shift ;;
     --no-boss)     NO_BOSS=1;               shift ;;
+    --provider)    GLOBAL_PROVIDER="${2:-}"; shift 2 ;;
+    --provider=*)  GLOBAL_PROVIDER="${1#--provider=}"; shift ;;
+    --*-provider)
+      _key="${1#--}"
+      _set_agent_provider "$_key" "${2:-}"
+      shift 2 ;;
+    --*-provider=*)
+      _key="${1#--}"
+      _key_name="${_key%%=*}"
+      _key_val="${1#*=}"
+      _set_agent_provider "$_key_name" "$_key_val"
+      shift ;;
     -h|--help)
-      sed -n '2,18p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+      sed -n '2,30p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
       exit 0 ;;
     *)
       echo "[run-all] unknown argument: $1" >&2
@@ -3490,6 +3598,30 @@ fi
 
 WORKERS=(dev-1 dev-2 dev-3 manager product-owner qa tester)
 
+# Resolve effective provider for one agent: per-agent override > global > "".
+# Empty string means "let run.sh fall back to provider.default / pi".
+_provider_for() {
+  local agent="$1" entry
+  for entry in "${AGENT_PROVIDER_ENTRIES[@]:-}"; do
+    [[ -z "$entry" ]] && continue
+    if [[ "$entry" == "$agent="* ]]; then
+      echo "${entry#*=}"
+      return
+    fi
+  done
+  echo "$GLOBAL_PROVIDER"
+}
+
+# Shell snippet that sets PROVIDER for an agent's run.sh, or empty if no
+# provider needs to be set (let run.sh resolve scaffold default).
+_provider_prefix() {
+  local agent="$1"
+  local p; p="$(_provider_for "$agent")"
+  if [[ -n "$p" ]]; then
+    printf 'PROVIDER=%q ' "$p"
+  fi
+}
+
 # ── background mode ─────────────────────────────────────────────────────────
 PIDS=()
 _cleanup_bg() {
@@ -3501,13 +3633,22 @@ _cleanup_bg() {
 
 _spawn_background() {
   local name="$1"
+  local provider; provider="$(_provider_for "$name")"
   (
     cd "$ROOT/agents/$name"
-    exec bash run.sh
+    if [[ -n "$provider" ]]; then
+      PROVIDER="$provider" exec bash run.sh
+    else
+      exec bash run.sh
+    fi
   ) &
   local pid=$!
   PIDS+=("$pid")
-  echo "[run-all] started $name in background (pid $pid)"
+  if [[ -n "$provider" ]]; then
+    echo "[run-all] started $name in background (pid $pid, provider=$provider)"
+  else
+    echo "[run-all] started $name in background (pid $pid)"
+  fi
 }
 
 # ── tabs mode (macOS Terminal.app / iTerm2 / Ghostty) ───────────────────────
@@ -3532,28 +3673,34 @@ _detect_terminal() {
 
 _spawn_tab_terminal() {
   local name="$1"
+  local prefix provider
+  prefix="$(_provider_prefix "$name")"
+  provider="$(_provider_for "$name")"
   /usr/bin/osascript <<APPLESCRIPT >/dev/null
 tell application "Terminal"
   activate
-  do script "cd '$ROOT/agents/$name' && exec bash run.sh"
+  do script "cd '$ROOT/agents/$name' && ${prefix}exec bash run.sh"
 end tell
 APPLESCRIPT
-  echo "[run-all] opened Terminal.app tab for $name"
+  echo "[run-all] opened Terminal.app tab for $name${provider:+ (provider=$provider)}"
 }
 
 _spawn_tab_iterm() {
   local name="$1"
+  local prefix provider
+  prefix="$(_provider_prefix "$name")"
+  provider="$(_provider_for "$name")"
   /usr/bin/osascript <<APPLESCRIPT >/dev/null
 tell application "iTerm"
   tell current window
     set newTab to (create tab with default profile)
     tell current session of newTab
-      write text "cd '$ROOT/agents/$name' && exec bash run.sh"
+      write text "cd '$ROOT/agents/$name' && ${prefix}exec bash run.sh"
     end tell
   end tell
 end tell
 APPLESCRIPT
-  echo "[run-all] opened iTerm2 tab for $name"
+  echo "[run-all] opened iTerm2 tab for $name${provider:+ (provider=$provider)}"
 }
 
 # Ghostty splits in the current window. Uses default Ghostty keybinds:
@@ -3564,7 +3711,8 @@ _GHOSTTY_SPLIT_COUNT=0
 _spawn_split_ghostty() {
   local name="$1"
   local lane_dir="$ROOT/agents/$name"
-  local cmd="cd $(printf %q "$lane_dir") && exec bash run.sh"
+  local prefix; prefix="$(_provider_prefix "$name")"
+  local cmd="cd $(printf %q "$lane_dir") && ${prefix}exec bash run.sh"
 
   local rc=0
   /usr/bin/osascript - "$cmd" >/dev/null 2>&1 <<'APPLESCRIPT' || rc=$?
@@ -3619,7 +3767,8 @@ _GHOSTTY_ACTIVATED=0
 _spawn_tab_ghostty() {
   local name="$1"
   local lane_dir="$ROOT/agents/$name"
-  local cmd="cd $(printf %q "$lane_dir") && exec bash run.sh"
+  local prefix; prefix="$(_provider_prefix "$name")"
+  local cmd="cd $(printf %q "$lane_dir") && ${prefix}exec bash run.sh"
 
   local rc=0
   if [[ "$_GHOSTTY_ACTIVATED" == "0" ]]; then
@@ -3664,7 +3813,7 @@ APPLESCRIPT
   echo "[run-all] System Events scripting blocked for Ghostty — falling back to new window." >&2
   echo "[run-all]   grant Accessibility permission in System Settings → Privacy & Security → Accessibility" >&2
 
-  open -na "Ghostty" --args --working-directory="$lane_dir" --command="bash run.sh" >/dev/null 2>&1 || {
+  open -na "Ghostty" --args --working-directory="$lane_dir" --command="${prefix}bash run.sh" >/dev/null 2>&1 || {
     echo "[run-all] failed to launch Ghostty for $name — install Ghostty or use --mode background" >&2
     return 1
   }
@@ -3736,8 +3885,14 @@ echo "[run-all] launching boss in this terminal — Ctrl+C exits boss."
 if [[ "$MODE" == "background" ]]; then
   echo "[run-all] background workers will be terminated when boss exits."
 fi
+_BOSS_PROVIDER="$(_provider_for boss)"
 cd "$ROOT/agents/boss"
-exec bash run.sh
+if [[ -n "$_BOSS_PROVIDER" ]]; then
+  echo "[run-all] boss provider: $_BOSS_PROVIDER"
+  PROVIDER="$_BOSS_PROVIDER" exec bash run.sh
+else
+  exec bash run.sh
+fi
 RUNALLEOF
 chmod +x "$AGENTS_ROOT/agents/run-all.sh"
 
