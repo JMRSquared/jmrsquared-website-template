@@ -1900,10 +1900,77 @@ On every pass:
 
 # Patrol responsibilities
 After handoff, patrol the workflow status chain on every pass and unblock anything stuck:
-- `bd list --status in_progress` — run stale-task sweep (see next section).
+- **FIRST**: run the global-blocker check (see next section). If main is broken, EVERYTHING else waits.
+- `bd list --status in_progress` — run stale-task sweep.
 - `bd list --status ready_for_qa` — confirm DONE comment lists branch + PR URL + verification commands; confirm evidence-validator exit 0; ensure qa picks it up.
 - `bd list --status in_qa` — watch for stalled review; qa owns merge after PASS.
 - `bd list --status open` (excluding intake handoff queue) — resolve dependency loops.
+
+# Global-blocker protocol (FIRST step every patrol pass — stop-the-world)
+Blockers are catastrophic. There must NEVER be a state where all agents are
+blocked waiting on a broken main. On every patrol pass, BEFORE anything else:
+
+1. Check whether an active critical bead already exists:
+   ```
+   bd list --tag critical --json | jq '[.[] | select(.status != "closed")]'
+   ```
+   If one exists, do NOT create another — escalate via comment if it has been
+   open >30 min: `bd comments add <critical-id> --author manager "Escalation:
+   <N>m old. Status: <status>. Assignee: <name>. Devs are halted. Resolve now."`
+
+2. If no active critical, run the global-blocker check:
+   ```
+   bash agents/lib/global-blocker-check.sh --json
+   ```
+   - `status:"green"` → main is healthy. Proceed to normal patrol.
+   - `status:"broken"` → main is broken. Execute the critical protocol below.
+
+3. **Critical protocol — main is broken. ALL devs halt non-critical work until
+   this is closed.** Execute in order:
+
+   a. Identify least-loaded dev (lowest count of in_progress + open beads):
+      ```
+      bd list --status in_progress --json | jq -r '.[].assignee' | sort | uniq -c
+      ```
+   b. Create the critical bead (manager exception to "no implementation
+      beads" — narrowly scoped to fix-main-now):
+      ```
+      bd create \\
+        --title "CRITICAL: main is broken — <failing step> (<one-line cause>)" \\
+        --description "Main is failing: <failures from global-blocker-check>. \\
+        Acceptance: ${BUILD_CMD} && ${TEST_CMD} && ${LINT_CMD} all pass on main. \\
+        ALL non-critical dev work is halted until this is closed. \\
+        Fix the smallest thing that makes main green; do not refactor." \\
+        --type bug \\
+        --priority 0 \\
+        --tag critical \\
+        --assignee <least-loaded-dev>
+      ```
+   c. Broadcast halt to every active in_progress bead so devs see it on next
+      poll (their patrol loop reads comments before claiming new work):
+      ```
+      for id in $(bd list --status in_progress --json | jq -r '.[].id'); do
+        bd comments add "$id" --author manager "HALT: critical bead <crit-id> \\
+        opened (main broken). Park your current bead at next safe stopping \\
+        point. Resume after critical closes."
+      done
+      ```
+   d. Comment on the critical with explicit halt order:
+      ```
+      bd comments add <crit-id> --author manager "STOP-THE-WORLD: All devs \\
+      except <assignee> halt non-critical work until this is closed. \\
+      Assignee: drop your current bead (push WIP, set status=open), claim \\
+      this bead, fix main, ship via the normal ready_for_qa flow but with \\
+      expedited qa review."
+      ```
+
+4. After the critical closes (qa PASS + merge-and-close), post resume:
+   ```
+   bd comments add <crit-id> --author manager "RESOLVED: main is green. \\
+   All devs may resume parked work."
+   ```
+   Then on each parked bead, comment: `bd comments add <id> --author manager
+   "All-clear: <crit-id> closed. You may un-park and resume."`
 
 # Stale-task sweep (mandatory every pass — no agent left hanging)
 You are responsible for the liveness of every `in_progress` bead. An agent that
@@ -1975,7 +2042,8 @@ describing the issue and next required action. Reassign only when original
 assignment was wrong.
 
 # Hard rules
-- Never create implementation beads (product-owner does). Descope intake beads ARE allowed and required.
+- Never create implementation beads (product-owner does). **Two exceptions:** descope intake beads (step 3 of stale sweep) and CRITICAL beads (step 3 of global-blocker protocol). Both are mandatory; neither goes through product-owner decomposition.
+- Critical beads ALWAYS jump the queue. They are `--priority 0 --tag critical`, assigned directly to the least-loaded dev, and stop-the-world for everyone else.
 - Never assign work to dev-1/2/3 directly (product-owner assigns).
 - Never close a bead that did not transition through `in_qa` with a qa PASS comment — flag any `ready_for_qa → closed` jump as a process violation and reset to `ready_for_test`. **Exception:** descope closures (step 3b above) are permitted and must carry the `descoped` tag plus a replacement parent reference.
 - Never `bd delete` a bead. Closed beads stay in the database forever as the historical audit trail. Only the ephemeral per-bead worktree + branch are reaped (via `agents/lib/reap-bead-worktree.sh`); the record itself is immortal.
@@ -2012,7 +2080,9 @@ On every pass:
 1. Poll `bd list --assignee product-owner --status open --json` for parents from manager.
    Sort `--tag descope` parents to the FRONT — descope intake means an agent is
    already idle waiting for replacement work; do not let it queue behind regular
-   intake.
+   intake. **Never** touch `--tag critical` beads even if mis-routed to you —
+   manager owns them and assigns directly to a dev; comment "rerouting to manager"
+   and `bd update <id> --assign manager` immediately.
 2. Read description fully (scope, AC, Q&A, originating bead reference).
 3. Perform a **thorough repo discovery pass** — read relevant files to map every surface.
 4. **In-flight overlap audit (mandatory)** before creating any child bead:
@@ -2106,7 +2176,24 @@ Run `bd prime` at the start of every session to load the full bd command referen
 Read `.agents/skills/beads/SKILL.md` for the full command reference and agent workflow guide.
 
 # Workflow
+0. **STOP-THE-WORLD CHECK (every loop iteration, before anything else).**
+   Blockers on main are catastrophic. Run:
+   ```
+   bash agents/lib/assert-no-active-critical.sh --actor dev-1
+   ```
+   - Exit 0: no critical bead. Proceed.
+   - Exit 10: a critical bead is assigned to YOU. Drop everything. If you
+     have an in_progress non-critical bead, commit WIP (`wip(halt): <bead-id>
+     parked for critical <crit-id>`), set its status back to `open`, then
+     CLAIM the critical bead and follow the rest of this workflow on it.
+   - Exit 20: a critical bead is assigned to ANOTHER dev. HALT. If you have
+     an in_progress non-critical bead, push WIP, set its status to `open`,
+     exit the patrol loop. Do NOT claim any new non-critical work until the
+     critical bead is closed. Resume on the next patrol iteration once the
+     stop-the-world check returns 0.
 1. Pick up only beads assigned to you: `bd list --assigned dev-1 --status open`.
+   Critical beads (`--tag critical --priority 0`) ALWAYS take precedence over
+   anything else in your queue.
 2. **Claim:** `bd update <bead-id> --claim --actor dev-1`. Sets status to `in_progress`.
 3. **Spawn the bead worktree.** Run:
    ```
@@ -2183,7 +2270,24 @@ Run `bd prime` at the start of every session to load the full bd command referen
 Read `.agents/skills/beads/SKILL.md` for the full command reference and agent workflow guide.
 
 # Workflow
+0. **STOP-THE-WORLD CHECK (every loop iteration, before anything else).**
+   Blockers on main are catastrophic. Run:
+   ```
+   bash agents/lib/assert-no-active-critical.sh --actor dev-2
+   ```
+   - Exit 0: no critical bead. Proceed.
+   - Exit 10: a critical bead is assigned to YOU. Drop everything. If you
+     have an in_progress non-critical bead, commit WIP (`wip(halt): <bead-id>
+     parked for critical <crit-id>`), set its status back to `open`, then
+     CLAIM the critical bead and follow the rest of this workflow on it.
+   - Exit 20: a critical bead is assigned to ANOTHER dev. HALT. If you have
+     an in_progress non-critical bead, push WIP, set its status to `open`,
+     exit the patrol loop. Do NOT claim any new non-critical work until the
+     critical bead is closed. Resume on the next patrol iteration once the
+     stop-the-world check returns 0.
 1. Pick up only beads assigned to you: `bd list --assigned dev-2 --status open`.
+   Critical beads (`--tag critical --priority 0`) ALWAYS take precedence over
+   anything else in your queue.
 2. **Claim:** `bd update <bead-id> --claim --actor dev-2`. Sets status to `in_progress`.
 3. **Spawn the bead worktree.** Run:
    ```
@@ -2260,7 +2364,24 @@ Run `bd prime` at the start of every session to load the full bd command referen
 Read `.agents/skills/beads/SKILL.md` for the full command reference and agent workflow guide.
 
 # Workflow
+0. **STOP-THE-WORLD CHECK (every loop iteration, before anything else).**
+   Blockers on main are catastrophic. Run:
+   ```
+   bash agents/lib/assert-no-active-critical.sh --actor dev-3
+   ```
+   - Exit 0: no critical bead. Proceed.
+   - Exit 10: a critical bead is assigned to YOU. Drop everything. If you
+     have an in_progress non-critical bead, commit WIP (`wip(halt): <bead-id>
+     parked for critical <crit-id>`), set its status back to `open`, then
+     CLAIM the critical bead and follow the rest of this workflow on it.
+   - Exit 20: a critical bead is assigned to ANOTHER dev. HALT. If you have
+     an in_progress non-critical bead, push WIP, set its status to `open`,
+     exit the patrol loop. Do NOT claim any new non-critical work until the
+     critical bead is closed. Resume on the next patrol iteration once the
+     stop-the-world check returns 0.
 1. Pick up only beads assigned to you: `bd list --assigned dev-3 --status open`.
+   Critical beads (`--tag critical --priority 0`) ALWAYS take precedence over
+   anything else in your queue.
 2. **Claim:** `bd update <bead-id> --claim --actor dev-3`. Sets status to `in_progress`.
 3. **Spawn the bead worktree.** Run:
    ```
@@ -2320,6 +2441,15 @@ Root: {PROJECT_ROOT}.
 # bd CLI
 Run `bd prime` at the start of every session to load the full bd command reference.
 Read `.agents/skills/beads/SKILL.md` for the full command reference and agent workflow guide.
+
+# Pass 0 — Critical beads (stop-the-world)
+Before anything else, run `bd list --tag critical --status ready_for_qa --json`.
+If any critical bead is waiting on review, **jump it to the front of your
+queue**. Critical beads exist because main is broken and every dev is halted —
+your review must be expedited. The audit bar is still the same; only the
+priority is elevated. On PASS, run `merge-and-close.sh` immediately. On FAIL,
+post the precise repro and reassign to the original dev with a clear note that
+the world is still halted.
 
 # Pass 1 — Review beads ready for qa
 Watch `bd list --status ready_for_qa`. For each bead:
@@ -2968,6 +3098,153 @@ echo "$WT_PATH"
 exit 0
 SPAWN_EOF
 chmod +x "$AGENTS_ROOT/agents/lib/spawn-bead-worktree.sh"
+
+# Write global-blocker-check.sh — detect broken main (build/test/lint).
+cat > "$AGENTS_ROOT/agents/lib/global-blocker-check.sh" <<GLOBALBLOCKEREOF
+#!/usr/bin/env bash
+# global-blocker-check.sh — verify main/ is healthy. Manager runs this every
+# patrol pass. Any failure means a CRITICAL bead must exist (and ALL devs
+# halt non-critical work) until main is green again.
+#
+# Usage:
+#   bash agents/lib/global-blocker-check.sh [--json|--exit]
+#
+# Modes:
+#   --json   (default) print JSON: {status:"green"|"broken", failures:[{step,cmd,exit_code,tail}]}
+#   --exit   exit 0 if green, exit 1 if broken (no JSON, just human output)
+#
+# Detects failure in: build, test, lint. Quick fails (returns first failure).
+# Run from main/ or any wt; resolves main/ via 'git worktree list'.
+set -uo pipefail
+
+MODE="json"
+case "\${1:-}" in
+  --json) MODE="json" ;;
+  --exit) MODE="exit" ;;
+  -h|--help) sed -n '2,14p' "\${BASH_SOURCE[0]}" | sed 's/^# \\{0,1\\}//'; exit 0 ;;
+  "") ;;
+  *) echo "global-blocker-check: unknown arg: \$1" >&2; exit 2 ;;
+esac
+
+# Resolve MAIN_REPO: prefer the wt named "main"; fall back to git rev-parse.
+MAIN_REPO=""
+if command -v git >/dev/null 2>&1; then
+  MAIN_REPO=\$(git worktree list --porcelain 2>/dev/null | awk '
+    /^worktree / {wt=\$2}
+    /^branch refs\\/heads\\/main$/ {print wt; exit}
+  ')
+fi
+if [[ -z "\$MAIN_REPO" || ! -d "\$MAIN_REPO" ]]; then
+  MAIN_REPO=\$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+fi
+
+BUILD_CMD="$BUILD_CMD"
+TEST_CMD="$TEST_CMD"
+LINT_CMD="$LINT_CMD"
+
+run_step() {
+  local name="\$1"; local cmd="\$2"
+  local tmp; tmp=\$(mktemp)
+  local code=0
+  ( cd "\$MAIN_REPO" && eval "\$cmd" ) >"\$tmp" 2>&1 || code=\$?
+  if [[ "\$code" -eq 0 ]]; then
+    rm -f "\$tmp"
+    return 0
+  fi
+  local tail
+  tail=\$(tail -n 30 "\$tmp" | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read()))')
+  rm -f "\$tmp"
+  echo "FAIL \$name (exit \$code)" >&2
+  if [[ "\$MODE" == "json" ]]; then
+    printf '{"status":"broken","failures":[{"step":"%s","cmd":"%s","exit_code":%d,"tail":%s}]}\\n' \\
+      "\$name" "\$cmd" "\$code" "\$tail"
+  fi
+  return "\$code"
+}
+
+if [[ "\$MODE" == "json" ]]; then
+  run_step build "\$BUILD_CMD" || exit 0
+  run_step test  "\$TEST_CMD"  || exit 0
+  run_step lint  "\$LINT_CMD"  || exit 0
+  echo '{"status":"green","failures":[]}'
+else
+  ( cd "\$MAIN_REPO" && eval "\$BUILD_CMD" >/dev/null 2>&1 ) || { echo "FAIL build" >&2; exit 1; }
+  ( cd "\$MAIN_REPO" && eval "\$TEST_CMD"  >/dev/null 2>&1 ) || { echo "FAIL test"  >&2; exit 1; }
+  ( cd "\$MAIN_REPO" && eval "\$LINT_CMD"  >/dev/null 2>&1 ) || { echo "FAIL lint"  >&2; exit 1; }
+  echo "global-blocker-check: main is green"
+fi
+exit 0
+GLOBALBLOCKEREOF
+chmod +x "$AGENTS_ROOT/agents/lib/global-blocker-check.sh"
+
+# Write assert-no-active-critical.sh — devs gate every patrol on this.
+cat > "$AGENTS_ROOT/agents/lib/assert-no-active-critical.sh" <<'ASSERTCRITEOF'
+#!/usr/bin/env bash
+# assert-no-active-critical.sh — gate dev work on critical beads.
+#
+# Exit codes:
+#   0  no active critical bead — caller may proceed
+#   10 active critical exists AND it is assigned to caller — caller MUST drop everything and claim it
+#   20 active critical exists assigned to someone else — caller MUST halt non-critical work
+#
+# Usage:
+#   bash agents/lib/assert-no-active-critical.sh --actor dev-1
+#
+# Stdout: JSON {status, critical_id, assignee} when a critical exists; empty otherwise.
+set -uo pipefail
+
+ACTOR=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --actor) ACTOR="${2:-}"; shift 2 ;;
+    -h|--help) sed -n '2,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "assert-no-active-critical: unknown arg: $1" >&2; exit 2 ;;
+  esac
+done
+
+if [[ -z "$ACTOR" ]]; then
+  echo "assert-no-active-critical: --actor <agent> required" >&2
+  exit 2
+fi
+
+if ! command -v bd >/dev/null 2>&1; then
+  echo "assert-no-active-critical: bd not available — assuming green" >&2
+  exit 0
+fi
+
+# Active critical = tag 'critical' AND status open OR in_progress OR ready_for_qa OR in_qa.
+# (i.e. not yet closed)
+RAW=$(bd list --tag critical --json 2>/dev/null || echo "[]")
+export ACTOR RAW
+
+python3 <<'PYC'
+import json, os, sys
+actor = os.environ["ACTOR"]
+try:
+    beads = json.loads(os.environ.get("RAW") or "[]")
+except Exception:
+    beads = []
+ACTIVE = ("open", "in_progress", "ready_for_qa", "in_qa", "ready_for_test", "in_test")
+mine, theirs = None, None
+for b in beads:
+    if (b.get("status") or "").lower() not in ACTIVE:
+        continue
+    assignee = (b.get("assignee") or b.get("assigned_to") or "").strip()
+    if assignee == actor:
+        mine = b
+        break
+    if theirs is None:
+        theirs = b
+if mine:
+    print(json.dumps({"status": "yours", "critical_id": mine.get("id"), "assignee": actor}))
+    sys.exit(10)
+if theirs:
+    print(json.dumps({"status": "halt", "critical_id": theirs.get("id"), "assignee": theirs.get("assignee") or theirs.get("assigned_to") or ""}))
+    sys.exit(20)
+sys.exit(0)
+PYC
+ASSERTCRITEOF
+chmod +x "$AGENTS_ROOT/agents/lib/assert-no-active-critical.sh"
 
 # Write stale-task-monitor.sh — detect hanging in_progress beads.
 cat > "$AGENTS_ROOT/agents/lib/stale-task-monitor.sh" <<'STALE_EOF'
@@ -3755,7 +4032,9 @@ if [[ "$UPDATE_MODE" == true ]]; then
   echo "                                                      merge-and-close,"
   echo "                                                      spawn-bead-worktree,"
   echo "                                                      reap-bead-worktree,"
-  echo "                                                      stale-task-monitor)"
+  echo "                                                      stale-task-monitor,"
+  echo "                                                      global-blocker-check,"
+  echo "                                                      assert-no-active-critical)"
   echo "  • agents/run-all.sh                                (worker launcher)"
   echo "  • agents/SKILLS.md                                 (master inventory)"
   echo "  • .agents/skills/**                                (resync from sources)"
