@@ -2595,8 +2595,18 @@ PYEOF
 #   PROVIDER=<name> bash agents/<agent>/run.sh
 #   bash agents/run-all.sh --provider <name>
 #   bash agents/run-all.sh --<agent>-provider <name>
-SCAFFOLD_PROVIDER_DEFAULT="${PROVIDER:-pi}"
-echo "$SCAFFOLD_PROVIDER_DEFAULT" > "$AGENTS_ROOT/agents/provider.default"
+#
+# Update mode preserves the existing default when --provider was not passed,
+# so re-running the updater never silently changes which CLI agents talk to.
+_provider_default_file="$AGENTS_ROOT/agents/provider.default"
+mkdir -p "$AGENTS_ROOT/agents"
+if [[ "$UPDATE_MODE" == true && -z "$PROVIDER" && -f "$_provider_default_file" ]]; then
+  SCAFFOLD_PROVIDER_DEFAULT="$(tr -d '[:space:]' < "$_provider_default_file")"
+  echo "  • preserving existing provider.default: $SCAFFOLD_PROVIDER_DEFAULT"
+else
+  SCAFFOLD_PROVIDER_DEFAULT="${PROVIDER:-pi}"
+  echo "$SCAFFOLD_PROVIDER_DEFAULT" > "$_provider_default_file"
+fi
 
 # ── Write run.sh for each agent (multi-provider: pi / claude / codex / cursor-agent) ──
 for AGENT in "${AGENT_LIST[@]}"; do
