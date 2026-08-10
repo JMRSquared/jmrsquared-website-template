@@ -30,6 +30,22 @@
 - Run quality checks with `yarn lint` and `yarn typecheck` after meaningful changes.
 - When documenting setup or commands, always show the `yarn` version of the command.
 
+# Premium Website Creation
+
+For building or redesigning websites with stunning, premium, interactive experiences, use the comprehensive guide at:
+
+`docs/superpowers/prompts/website-creation.md`
+
+This prompt provides:
+- Phase 1: Discovery questions to gather project context
+- Phase 2: Design vision with award-winning agency inspiration
+- Phase 3: Technical implementation guidelines (3D, WebGL, scroll-driven animations)
+- Phase 4: Implementation checklist
+- Phase 5: File organization patterns
+- Phase 6: Definition of done
+
+Read this prompt file when the user requests to build, create, redesign, remake, or overhaul a website.
+
 # Release Command Mapping
 
 When the user says "release the website" or anything related to asking the website to be released, execute exactly:
