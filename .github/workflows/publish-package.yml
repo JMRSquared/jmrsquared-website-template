@@ -3,19 +3,27 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 permissions:
   contents: read
   id-token: write
   packages: write
 
+concurrency:
+  group: publish-package
+  cancel-in-progress: false
+
 jobs:
   publish_package:
     runs-on: ubuntu-latest
+    env:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      GIT_HUB_TOKEN: ${{ secrets.GIT_HUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
 
@@ -24,10 +32,24 @@ jobs:
           corepack enable
           corepack prepare yarn@4.13.0 --activate
 
-      - name: Ensure npm supports trusted publishing
+      - name: Use latest npm
         run: |
           npm install -g npm@latest
           npm --version
+
+      - name: Configure registry auth
+        run: |
+          set -euo pipefail
+          if [ -z "${NPM_TOKEN}" ]; then
+            echo "NPM_TOKEN secret is missing. Create a granular access token on npmjs.com"
+            echo "with read+write on create-jmrsquared-website-template and 2FA bypass enabled."
+            exit 1
+          fi
+          {
+            echo '//registry.npmjs.org/:_authToken=${NPM_TOKEN}'
+            echo '//npm.pkg.github.com/:_authToken=${GIT_HUB_TOKEN}'
+          } > "$HOME/.npmrc"
+          chmod 600 "$HOME/.npmrc"
 
       - name: Install dependencies
         run: yarn install --immutable
@@ -41,74 +63,38 @@ jobs:
       - name: Capture package metadata
         id: package
         run: |
+          set -euo pipefail
           package_name=$(node -p "require('./package.json').name")
           package_version=$(node -p "require('./package.json').version")
-          github_name=$(node -e "const pkg = require('./package.json'); const owner = (process.env.GITHUB_REPOSITORY_OWNER || '').toLowerCase(); process.stdout.write('@' + owner + '/' + pkg.name);")
-          echo "name=${package_name}" >> "$GITHUB_OUTPUT"
-          echo "version=${package_version}" >> "$GITHUB_OUTPUT"
-          echo "github_name=${github_name}" >> "$GITHUB_OUTPUT"
+          github_name="@$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')/${package_name}"
+          {
+            echo "name=${package_name}"
+            echo "version=${package_version}"
+            echo "github_name=${github_name}"
+          } >> "$GITHUB_OUTPUT"
         env:
           GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
 
-      - name: Validate npm publish preconditions
+      - name: Check npm registry state
+        id: npm_state
         run: |
           set -euo pipefail
           if npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" version --registry https://registry.npmjs.org/ >/dev/null 2>&1; then
-            echo "Package ${PACKAGE_NAME}@${PACKAGE_VERSION} is already published to npm."
-            exit 1
+            echo "${PACKAGE_NAME}@${PACKAGE_VERSION} is already on npm. Skipping npm publish."
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
           fi
         env:
           PACKAGE_NAME: ${{ steps.package.outputs.name }}
           PACKAGE_VERSION: ${{ steps.package.outputs.version }}
 
-      - name: Verify OIDC for npm trusted publishing
-        run: |
-          set -euo pipefail
-          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] || [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]; then
-            echo "OIDC is unavailable. Ensure permissions.id-token is write."
-            exit 1
-          fi
-          echo "OIDC token exchange endpoint is available."
-          rm -f "$HOME/.npmrc" .npmrc
-          unset NODE_AUTH_TOKEN NPM_TOKEN || true
-
-      - name: Diagnose npm trusted publisher exchange
-        run: |
-          set -euo pipefail
-          id_token="$(curl -fsSL \
-            -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
-            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=npm:registry.npmjs.org" \
-            | node -p 'JSON.parse(require("fs").readFileSync(0,"utf8")).value')"
-          encoded_name="$(node -p 'encodeURIComponent(process.argv[1])' "${PACKAGE_NAME}")"
-          http_code="$(curl -sS -o /tmp/npm-oidc-exchange.json -w '%{http_code}' \
-            -X POST \
-            -H "Authorization: Bearer ${id_token}" \
-            "https://registry.npmjs.org/-/npm/v1/oidc/token/exchange/package/${encoded_name}")"
-          echo "npm OIDC exchange HTTP status: ${http_code}"
-          node -e 'const fs=require("fs"); const body=JSON.parse(fs.readFileSync("/tmp/npm-oidc-exchange.json","utf8")); if (body.token) body.token="[redacted]"; console.log(JSON.stringify(body,null,2));'
-          if [ "${http_code}" != "200" ]; then
-            echo "Trusted publisher is missing or misconfigured for ${PACKAGE_NAME}."
-            echo "On npmjs.com set GitHub Actions trusted publisher to:"
-            echo "  Organization or user: JMRSquared"
-            echo "  Repository: jmrsquared-website-template"
-            echo "  Workflow filename: publish-package.yml"
-            echo "  Allowed actions: npm publish"
-            exit 1
-          fi
+      - name: Publish to npm
+        if: steps.npm_state.outputs.should_publish == 'true'
+        run: npm publish --provenance --access public --registry https://registry.npmjs.org/
         env:
           PACKAGE_NAME: ${{ steps.package.outputs.name }}
-
-      - name: Publish to npm
-        run: |
-          set -euo pipefail
-          unset NODE_AUTH_TOKEN NPM_TOKEN || true
-          npm publish --access public --registry https://registry.npmjs.org/
-
-      - name: Configure GitHub Packages auth
-        run: |
-          printf '//npm.pkg.github.com/:_authToken=%s\n' "${GIT_HUB_TOKEN}" > "$HOME/.npmrc"
-        env:
-          GIT_HUB_TOKEN: ${{ secrets.GIT_HUB_TOKEN }}
+          PACKAGE_VERSION: ${{ steps.package.outputs.version }}
 
       - name: Prepare GitHub Packages bundle
         run: yarn prepare:github-package
@@ -117,19 +103,36 @@ jobs:
           GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
           GITHUB_SERVER_URL: ${{ github.server_url }}
 
-      - name: Validate GitHub Packages publish preconditions
+      - name: Check GitHub Packages state
+        id: github_state
         run: |
           set -euo pipefail
           if npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" version --registry https://npm.pkg.github.com/ >/dev/null 2>&1; then
-            echo "Package ${PACKAGE_NAME}@${PACKAGE_VERSION} is already published to GitHub Packages."
-            exit 1
+            echo "${PACKAGE_NAME}@${PACKAGE_VERSION} is already on GitHub Packages. Skipping."
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
           fi
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.GIT_HUB_TOKEN }}
           PACKAGE_NAME: ${{ steps.package.outputs.github_name }}
           PACKAGE_VERSION: ${{ steps.package.outputs.version }}
 
       - name: Publish to GitHub Packages
+        if: steps.github_state.outputs.should_publish == 'true'
         run: npm publish ./.publish/github-package --registry https://npm.pkg.github.com/
+
+      - name: Publish summary
+        if: always()
+        run: |
+          {
+            echo "### Publish Package"
+            echo ""
+            echo "| Registry | Version | Result |"
+            echo "| --- | --- | --- |"
+            echo "| npm | ${PACKAGE_VERSION} | ${NPM_RESULT} |"
+            echo "| GitHub Packages | ${PACKAGE_VERSION} | ${GITHUB_RESULT} |"
+          } >> "$GITHUB_STEP_SUMMARY"
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.GIT_HUB_TOKEN }}
+          PACKAGE_VERSION: ${{ steps.package.outputs.version }}
+          NPM_RESULT: ${{ steps.npm_state.outputs.should_publish == 'true' && 'published' || 'skipped (already published)' }}
+          GITHUB_RESULT: ${{ steps.github_state.outputs.should_publish == 'true' && 'published' || 'skipped (already published)' }}
