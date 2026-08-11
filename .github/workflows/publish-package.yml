@@ -25,16 +25,9 @@ jobs:
           corepack prepare yarn@4.13.0 --activate
 
       - name: Ensure npm supports trusted publishing
-        run: npm install -g npm@latest
-
-      - name: Configure GitHub Packages auth
         run: |
-          cat <<EOF > "$HOME/.npmrc"
-          //npm.pkg.github.com/:_authToken=${GIT_HUB_TOKEN}
-          //npm.pkg.github.com/:always-auth=true
-          EOF
-        env:
-          GIT_HUB_TOKEN: ${{ secrets.GIT_HUB_TOKEN }}
+          npm install -g npm@latest
+          npm --version
 
       - name: Install dependencies
         run: yarn install --immutable
@@ -68,10 +61,28 @@ jobs:
           PACKAGE_NAME: ${{ steps.package.outputs.name }}
           PACKAGE_VERSION: ${{ steps.package.outputs.version }}
 
+      - name: Verify OIDC for npm trusted publishing
+        run: |
+          set -euo pipefail
+          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] || [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]; then
+            echo "OIDC is unavailable. Ensure permissions.id-token is write."
+            exit 1
+          fi
+          echo "OIDC token exchange endpoint is available."
+          rm -f "$HOME/.npmrc" .npmrc
+          unset NODE_AUTH_TOKEN NPM_TOKEN || true
+
       - name: Publish to npm
         run: |
-          unset NODE_AUTH_TOKEN
+          set -euo pipefail
+          unset NODE_AUTH_TOKEN NPM_TOKEN || true
           npm publish --access public --registry https://registry.npmjs.org/
+
+      - name: Configure GitHub Packages auth
+        run: |
+          printf '//npm.pkg.github.com/:_authToken=%s\n' "${GIT_HUB_TOKEN}" > "$HOME/.npmrc"
+        env:
+          GIT_HUB_TOKEN: ${{ secrets.GIT_HUB_TOKEN }}
 
       - name: Prepare GitHub Packages bundle
         run: yarn prepare:github-package
