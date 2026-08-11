@@ -72,6 +72,32 @@ jobs:
           rm -f "$HOME/.npmrc" .npmrc
           unset NODE_AUTH_TOKEN NPM_TOKEN || true
 
+      - name: Diagnose npm trusted publisher exchange
+        run: |
+          set -euo pipefail
+          id_token="$(curl -fsSL \
+            -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=npm:registry.npmjs.org" \
+            | node -p 'JSON.parse(require("fs").readFileSync(0,"utf8")).value')"
+          encoded_name="$(node -p 'encodeURIComponent(process.argv[1])' "${PACKAGE_NAME}")"
+          http_code="$(curl -sS -o /tmp/npm-oidc-exchange.json -w '%{http_code}' \
+            -X POST \
+            -H "Authorization: Bearer ${id_token}" \
+            "https://registry.npmjs.org/-/npm/v1/oidc/token/exchange/package/${encoded_name}")"
+          echo "npm OIDC exchange HTTP status: ${http_code}"
+          node -e 'const fs=require("fs"); const body=JSON.parse(fs.readFileSync("/tmp/npm-oidc-exchange.json","utf8")); if (body.token) body.token="[redacted]"; console.log(JSON.stringify(body,null,2));'
+          if [ "${http_code}" != "200" ]; then
+            echo "Trusted publisher is missing or misconfigured for ${PACKAGE_NAME}."
+            echo "On npmjs.com set GitHub Actions trusted publisher to:"
+            echo "  Organization or user: JMRSquared"
+            echo "  Repository: jmrsquared-website-template"
+            echo "  Workflow filename: publish-package.yml"
+            echo "  Allowed actions: npm publish"
+            exit 1
+          fi
+        env:
+          PACKAGE_NAME: ${{ steps.package.outputs.name }}
+
       - name: Publish to npm
         run: |
           set -euo pipefail
