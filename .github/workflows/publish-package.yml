@@ -26,6 +26,9 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+          # Corepack activates yarn 4 in the next step; the default cache probe
+          # shells out to the runner's yarn 1 and fails on the packageManager field.
+          package-manager-cache: false
 
       - name: Enable Corepack
         run: |
