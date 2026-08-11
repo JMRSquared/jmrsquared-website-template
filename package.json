@@ -10,8 +10,8 @@
     "update-template": "node ./bin/update.js"
   },
   "bin": {
-    "create-jmrsquared-website-template": "./bin/create.js",
-    "update-jmrsquared-website-template": "./bin/update.js"
+    "create-jmrsquared-website-template": "bin/create.js",
+    "update-jmrsquared-website-template": "bin/update.js"
   },
   "files": [
     "bin",
