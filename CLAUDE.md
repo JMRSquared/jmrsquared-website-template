@@ -20,6 +20,39 @@
 - Preserve accessibility, responsiveness, and maintainability as part of done criteria.
 - Before closing work, verify the solution is suitable for production with the relevant `yarn` checks for the change.
 
+## SEO (Search Engine Optimization)
+
+Every website must be built with SEO best practices from the start:
+
+### Meta Tags
+- Unique, descriptive `<title>` under 60 characters
+- Unique `<meta name="description">` under 160 characters
+- Open Graph tags: `og:title`, `og:description`, `og:image`, `og:url`, `og:type`
+- Twitter Card tags: `twitter:card`, `twitter:title`, `twitter:description`, `twitter:image`
+- Canonical URL to prevent duplicate content issues
+- `theme-color` meta tag matching brand
+
+### Structured Data
+- Add JSON-LD schema markup appropriate to content type (Organization, WebSite, Product, etc.)
+- Use `Schema.org` vocabulary for rich snippets in search results
+
+### Technical SEO
+- Semantic HTML with proper heading hierarchy (single `<h1>`, logical `<h2>`-`<h6>`)
+- Descriptive, keyword-appropriate `<title>` and `alt` text for all images
+- Descriptive link text (avoid "click here", "read more")
+- `robots.txt` with appropriate crawl directives
+- `sitemap.xml` listing all public pages
+
+### Performance (Core Web Vitals)
+- Optimize Largest Contentful Paint (LCP) < 2.5s — preload fonts, optimize images
+- Minimize Cumulative Layout Shift (CLS) < 0.1 — reserve space for images, use `aspect-ratio`
+- Ensure good First Input Delay (FID) / Interaction to Next Paint (INP) — defer heavy JS
+
+### Accessibility for SEO
+- All images have meaningful `alt` text (empty `alt=""` for decorative)
+- Color contrast meets WCAG AA minimums
+- Focus states visible for keyboard navigation
+
 # Yarn Workflow
 
 - Use `yarn` as the package manager for this project. Do not use `npm`, `pnpm`, or `bun`.
