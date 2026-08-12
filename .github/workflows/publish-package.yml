@@ -18,16 +18,14 @@ jobs:
   publish_package:
     runs-on: ubuntu-latest
     env:
-      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
       GIT_HUB_TOKEN: ${{ secrets.GIT_HUB_TOKEN }}
     steps:
       - uses: actions/checkout@v5
 
       - uses: actions/setup-node@v5
         with:
-          node-version: 22
-          # Corepack activates yarn 4 in the next step; the default cache probe
-          # shells out to the runner's yarn 1 and fails on the packageManager field.
+          node-version: 24
+          registry-url: https://registry.npmjs.org
           package-manager-cache: false
 
       - name: Enable Corepack
@@ -35,24 +33,10 @@ jobs:
           corepack enable
           corepack prepare yarn@4.13.0 --activate
 
-      - name: Use latest npm
+      - name: Use npm with trusted-publishing support
         run: |
           npm install -g npm@latest
           npm --version
-
-      - name: Configure registry auth
-        run: |
-          set -euo pipefail
-          if [ -z "${NPM_TOKEN}" ]; then
-            echo "NPM_TOKEN secret is missing. Create a granular access token on npmjs.com"
-            echo "with read+write on create-jmrsquared-website-template and 2FA bypass enabled."
-            exit 1
-          fi
-          {
-            echo '//registry.npmjs.org/:_authToken=${NPM_TOKEN}'
-            echo '//npm.pkg.github.com/:_authToken=${GIT_HUB_TOKEN}'
-          } > "$HOME/.npmrc"
-          chmod 600 "$HOME/.npmrc"
 
       - name: Install dependencies
         run: yarn install --immutable
@@ -92,12 +76,32 @@ jobs:
           PACKAGE_NAME: ${{ steps.package.outputs.name }}
           PACKAGE_VERSION: ${{ steps.package.outputs.version }}
 
-      - name: Publish to npm
+      - name: Clear token auth for npm OIDC publish
+        if: steps.npm_state.outputs.should_publish == 'true'
+        run: |
+          set -euo pipefail
+          npmrc="${NPM_CONFIG_USERCONFIG:-$HOME/.npmrc}"
+          if [ -f "$npmrc" ]; then
+            sed -i.bak '/_authToken/d' "$npmrc" || true
+            rm -f "${npmrc}.bak"
+          fi
+
+      - name: Publish to npm via trusted publishing
         if: steps.npm_state.outputs.should_publish == 'true'
         run: npm publish --provenance --access public --registry https://registry.npmjs.org/
-        env:
-          PACKAGE_NAME: ${{ steps.package.outputs.name }}
-          PACKAGE_VERSION: ${{ steps.package.outputs.version }}
+
+      - name: Configure GitHub Packages auth
+        run: |
+          set -euo pipefail
+          if [ -z "${GIT_HUB_TOKEN}" ]; then
+            echo "GIT_HUB_TOKEN secret is missing."
+            exit 1
+          fi
+          {
+            echo '//npm.pkg.github.com/:_authToken=${GIT_HUB_TOKEN}'
+            echo '@jmrsquared:registry=https://npm.pkg.github.com'
+          } >> "$HOME/.npmrc"
+          chmod 600 "$HOME/.npmrc"
 
       - name: Prepare GitHub Packages bundle
         run: yarn prepare:github-package

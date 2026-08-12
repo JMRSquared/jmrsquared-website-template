@@ -169,8 +169,27 @@ The root package publish workflow lives at `.github/workflows/publish-package.ym
 
 ### Required Secrets
 
-- `NPM_TOKEN`: npm access token with permission to publish `create-jmrsquared-website-template`
-- `GITHUB_TOKEN`: built into GitHub Actions and used for the GitHub Packages publish
+- `GIT_HUB_TOKEN`: used for the GitHub Packages publish
+- `NPM_TOKEN`: optional legacy fallback only; npm publishes via **Trusted Publishing (OIDC)** and no longer needs a write token once configured
+
+### Trusted Publishing (required for npm)
+
+npm now blocks classic automation tokens with `EOTP`. Configure Trusted Publishing once:
+
+1. Open https://www.npmjs.com/package/create-jmrsquared-website-template → **Settings** → **Trusted Publisher**
+2. Choose **GitHub Actions**
+3. Set:
+   - Organization or user: `JMRSquared`
+   - Repository: `jmrsquared-website-template`
+   - Workflow filename: `publish-package.yml`
+   - Allowed actions: `npm publish`
+4. Save, then push to `main` or run `gh workflow run publish-package.yml`
+
+For a one-off local publish with 2FA:
+
+```bash
+npm publish --access public --otp=<6-digit-code>
+```
 
 ### Important Notes
 
