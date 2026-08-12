@@ -11,9 +11,12 @@ The generator creates a new Vite website project from the embedded template, rew
 ## What It Generates
 
 - React + Vite + TypeScript + Tailwind CSS single-page website
+- Framer Motion + GSAP ScrollTrigger + React Three Fiber / Drei starter motion stack
+- Demo preview banner, JMR Squared attribution, and scheduled 2-week takedown automation
 - Cloudflare Pages or Firebase Hosting deploy config for `dist`
 - GitHub Actions workflow for provider-based deploys on `main`
 - Local Git repository initialized on `main`
+- `AGENTS.md` project instructions (`CLAUDE.md` only references `@AGENTS.md`)
 
 ## Requirements
 
@@ -52,7 +55,7 @@ During scaffolding:
    - `pi`
    - `codex`
 
-After you choose the coding agent, the scaffolder shows the exact command it will run and waits for Enter. From that point it scaffolds the app, installs dependencies, initializes git, creates/pushes the GitHub repo, configures secrets when available, writes an autonomous `/goal` + `/agents-execute` + `/premium-web-design` mission, and launches the selected coding agent. The agent build runs without further prompts.
+After you choose the coding agent, the scaffolder shows the exact command it will run and waits for Enter. From that point it scaffolds the app, installs dependencies, initializes git, creates/pushes the GitHub repo, configures secrets when available, writes an autonomous `mission.md` (premium design + quality gate + outreach), and launches the selected coding agent. The build runs without further prompts. Before outreach, the mission requires `yarn quality:gate` (Lighthouse + screenshots) with a **SHIP** decision. Every demo includes a preview banner, attribution, and a scheduled 2-week takedown workflow.
 
 ## Alternative: Full-Stack Monorepo Template
 

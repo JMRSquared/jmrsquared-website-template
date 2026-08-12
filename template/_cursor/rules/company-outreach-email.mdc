@@ -1,0 +1,39 @@
+---
+description: Require a GitHub issue with a polite company outreach pitch email after ship
+alwaysApply: true
+---
+
+# Company Outreach Email — Hard Requirement
+
+This template exists to pitch websites to real companies that already have trust (Google reviews, search traffic, local reputation) but lack a strong site.
+
+After the demo site ships **and** `quality-gate/report.md` says **SHIP**, open a GitHub issue that drafts a polite outreach email. Do not send the email yourself.
+
+## Issue
+
+- Create with `gh issue create`
+- Title: `Outreach draft: <Company Name> pitch email`
+- Body order (required):
+  1. **Company email** (`To:`) — real address from the brief / research. If none found: `Company email: not found — needs manual lookup`. Never invent one.
+  2. Short findings bullets (include quality-gate SHIP + demo URL)
+  3. Copy/paste draft email in a `text` fence
+- Also open/update `Demo takedown: <Company> by <takedownAt>`
+- If `gh` fails: write `outreach-email-draft.md` with the same order, commit it, and note the failure
+
+## Email must cover (keep it short)
+
+1. Specific praise from real findings (reviews, reputation). Quote one real review only if the brief has it.
+2. Why a website helps a trusted business convert attention into clear contact and choice.
+3. Complimentary unsolicited demo URL for the built site.
+4. Offer to improve once they share missing assets (logo, photos, services, contact details, colours).
+5. Plain-language SEO: helping them show up when people search for what they offer nearby.
+6. Pricing exact: **R150 per month** or **R4 000 once-off**, free maintenance for **2 years**, domain **excluded**.
+7. Takedown: remove anytime on request; auto-remove in **2 weeks** to avoid customer confusion.
+8. Close with `tech@jmrsquared.com` and `https://tech.jmrsquared.com/`
+
+## Writing rules
+
+- Human, polite, warm. Make them proud of their business.
+- No AI tells ("I hope this finds you well", leverage/unlock/seamless, em dashes, hype stacks).
+- No invented review counts, quotes, facts, or email addresses.
+- Half a page max. One clear ask: reply if they want to keep or refine the demo.

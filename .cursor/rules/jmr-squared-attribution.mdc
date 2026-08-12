@@ -1,0 +1,36 @@
+---
+description: Require JMR Squared attribution and similar-site contact on every website
+alwaysApply: true
+---
+
+# JMR Squared Attribution — Hard Requirement
+
+Every customer-facing website from this template **must** show JMR Squared attribution and a similar-site contact line. Removing or hiding it is a failure condition.
+
+## Required content (exact intent)
+
+1. Attribute the demo to **https://tech.jmrsquared.com/** (link must be live and visible).
+2. Include a clear message: if you want a similar website, email **tech@jmrsquared.com** (mailto link).
+3. State that this is an **unsolicited demo preview**, not the official business website, unless they choose to keep it.
+
+## Required implementation
+
+- Keep and render `src/shared/components/JmrSquaredAttribution.tsx` and `DemoPreviewBanner`.
+- Mount both site-wide on every public page.
+- Keep config in `src/shared/config/attribution.ts` and `src/shared/config/demo-preview.ts`.
+- Style to match the premium design, but do not obscure (no zero opacity, off-screen hide, or `display:none`).
+
+## Forbidden
+
+- Removing the attribution or demo banner
+- Replacing the studio URL or email with another agency
+- Making the credit conditional, behind a click, or present only in source comments
+- Shipping without a visible similar-website email CTA
+
+## Done check
+
+A reviewer must see, without hunting:
+
+- Demo preview banner with unsolicited/demo wording
+- A working link to `https://tech.jmrsquared.com/`
+- Visible copy inviting similar-website requests via `tech@jmrsquared.com`

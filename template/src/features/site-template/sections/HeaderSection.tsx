@@ -96,7 +96,7 @@ export function HeaderSection() {
 
   return (
     <>
-      <header className="fixed top-0 left-0 right-0 z-50 w-full overflow-hidden border-b border-white/60 bg-white/80 shadow-sm backdrop-blur-xl">
+      <header className="fixed top-[3.75rem] left-0 right-0 z-50 w-full overflow-hidden border-b border-white/60 bg-white/80 shadow-sm backdrop-blur-xl sm:top-11">
         <nav className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="flex h-16 items-center justify-between md:h-20">
             <button

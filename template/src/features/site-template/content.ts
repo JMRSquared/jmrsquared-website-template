@@ -9,7 +9,6 @@ import {
   MousePointer2,
   Paintbrush2,
   Scaling,
-  Smartphone,
   Sparkles,
   Zap,
 } from 'lucide-react';
@@ -43,31 +42,6 @@ export const navigationSections: NavigationSection[] = [
   { id: 'start', label: 'Start Here' },
 ];
 
-export const heroHighlights: string[] = [
-  'Clean structure for landing pages and marketing sites',
-  'Responsive spacing and typography tuned for small screens first',
-  'Animation patterns ready for premium interactions and reveals',
-];
-
-export const heroPreviewCards: FeatureCard[] = [
-  {
-    icon: Smartphone,
-    title: 'Mobile-first layout',
-    description: 'Responsive spacing, readable type, and stacked content blocks that scale elegantly.',
-  },
-  {
-    icon: LayoutTemplate,
-    title: 'Composable sections',
-    description: 'Drop in product, portfolio, agency, SaaS, or service content without rewriting the foundation.',
-  },
-];
-
-export const heroStackSummary = [
-  { label: 'Animation', value: 'Framer Motion' },
-  { label: 'Styling', value: 'Tailwind CSS' },
-  { label: 'Build', value: 'Vite + React' },
-];
-
 export const featureCards: FeatureCard[] = [
   {
     icon: LayoutTemplate,
@@ -86,13 +60,13 @@ export const featureCards: FeatureCard[] = [
   },
   {
     icon: Zap,
-    title: 'Motion-ready interactions',
-    description: 'Framer Motion is already in place for entrances, micro-interactions, and premium section transitions.',
+    title: '3D and scroll motion baked in',
+    description: 'React Three Fiber, Drei, GSAP ScrollTrigger, and Motion ship with the starter so premium motion is the default.',
   },
   {
     icon: Image,
     title: 'Built for strong visuals',
-    description: 'Use the clean card and showcase patterns as a base for high-quality imagery and art direction.',
+    description: 'Use the clean showcase patterns as a base for high-quality imagery and art direction.',
   },
   {
     icon: MousePointer2,
@@ -122,7 +96,7 @@ export const showcaseItems: ShowcaseItem[] = [
 export const showcaseStats: ShowcaseStat[] = [
   { label: 'Designed for', value: 'Mobile first', icon: Gauge },
   { label: 'Visual style', value: 'Clean and flexible', icon: Images },
-  { label: 'Interaction level', value: 'Motion ready', icon: MonitorPlay },
+  { label: 'Interaction level', value: '3D + scroll ready', icon: MonitorPlay },
 ];
 
 export const ctaChecklist: string[] = [

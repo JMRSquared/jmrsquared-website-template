@@ -10,5 +10,5 @@ alwaysApply: true
 - Run the local website with `yarn dev`.
 - Validate production output with `yarn build` before considering work complete.
 - Use `yarn preview` to verify the built site locally when needed.
-- Run quality checks with `yarn lint` and `yarn typecheck` after meaningful changes.
+- Run quality checks with `yarn lint`, `yarn typecheck`, and `yarn quality:gate` after meaningful changes.
 - When documenting setup or commands, always show the `yarn` version of the command.

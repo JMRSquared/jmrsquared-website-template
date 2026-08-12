@@ -1,0 +1,21 @@
+---
+description: Require demo preview banner, clear consent wording, and 2-week takedown metadata
+alwaysApply: true
+---
+
+# Demo Preview + Attribution — Hard Requirement
+
+Demos are unsolicited previews for real businesses. Consent and context must be obvious on the live site.
+
+## Required on every public page
+
+1. `DemoPreviewBanner` — sticky top banner stating this is an unsolicited demo preview, not the official site, removable on request or within 2 weeks
+2. `JmrSquaredAttribution` — credits JMR Squared, links to https://tech.jmrsquared.com/, invites similar-site requests at tech@jmrsquared.com, and explains the demo is not affiliated unless they choose to keep it
+3. `demo-meta.json` — accurate `createdAt`, `takedownAt` (created + 14 days), deploy provider/project, `status`
+4. `.github/workflows/demo-takedown.yml` + `scripts/demo-takedown.mjs` — keep scheduled takedown automation
+
+## Forbidden
+
+- Removing or hiding the banner / attribution
+- Shipping without demo-meta dates
+- Disabling the takedown workflow without replacing an equivalent automation

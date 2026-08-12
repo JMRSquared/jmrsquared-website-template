@@ -1,0 +1,68 @@
+---
+description: Hard-require stunning WOW craft, 3D/scroll motion, and zero AI-template look
+alwaysApply: true
+---
+
+# Premium Web Design — Hard Requirement
+
+Customer-facing websites in this repo **must** honour the full `premium-web-design` skill. This is non-negotiable.
+
+**Skill path:** `/Users/lavhe/CODE/jmrsquared-skills/.cursor/skills/premium-web-design/SKILL.md`
+
+The site must look **absolutely stunning**, with a clear **WOW factor**, and must **not look AI-generated** in any way. "Pretty good for AI" is a fail.
+
+## Mandatory before any design or code
+
+1. Invoke and follow `premium-web-design` end to end (`Understand → Study references → Design → Build → Interact → Test → Polish`).
+2. Study the skill’s reference sites in a real browser (igloo.inc, lusion.co, activetheory.net, fizzi, macbook-ui, nimbus-keyboards, apple-iphone14). Do not invent “premium” from memory.
+3. State one line before coding: `Reading this as: <page kind> for <audience>, <vibe>, leaning <direction>.`
+4. Commit to one original art direction for this brand. If the first viewport could belong to another brand after removing the nav, branding is too weak — redesign.
+
+## Hard technical bar (ship or fail)
+
+A website is incomplete if any of these are missing:
+
+| Requirement | Minimum |
+| --- | --- |
+| **Stunning craft** | Award-level composition, typography, spacing, color, imagery. Must feel human art-directed, not template-assembled. |
+| **WOW factor** | Moments that stop the user: 3D reveal, scroll-driven camera, interactive demo, morph, or equivalent. Soft fades do not count. |
+| **Anti-AI look** | Zero AI-template tells (see ban list below). A stranger should not guess “this was AI-made.” |
+| **3D / WebGL** | React Three Fiber + Drei are baked into the template. Keep and evolve the hero canvas (or equivalent product scene). Decorative CSS alone does not count. |
+| **Scroll storytelling** | GSAP + ScrollTrigger are baked into the template. Keep and evolve pin/scrub/parallax sequences. Fade-in-on-scroll alone does not count. |
+| **Motion craft** | At least 2–3 intentional cinematic or interactive moments beyond basic hover. |
+| **Mobile** | Keep 3D + scroll WOW on mobile (adapt/cap complexity; do not strip to a flat static page). |
+| **Reduced motion** | Coherent `prefers-reduced-motion` fallbacks that stay polished. |
+
+## Banned AI-generated tells (instant fail)
+
+- Purple-on-white / purple-to-indigo SaaS gradients
+- Warm cream (#F4F1EA-ish) + terracotta + generic serif “premium” kit
+- Broadsheet / hairline-rule newspaper layouts
+- Inter, Roboto, Arial, or system font stacks as the brand voice
+- Card grids, rounded-full pill clusters, badge/chip soup, floating stickers on the hero
+- Glassmorphism everywhere, multi-layer soft shadows, neon glow spam
+- Generic stock / repetitive AI illustrations as the main visual idea
+- Dashboard-first marketing layouts; inset hero media cards; tiled collage heroes
+- Lorem-ish marketing fluff, “empower / unlock / seamless / next-gen” copy without substance
+- Same section recipe repeated: icon + 3 feature cards + purple CTA
+
+## Stack preference
+
+Match the project stack first. Defaults when adding motion/3D:
+
+- Page / layout motion → Motion (Framer Motion)
+- Cinematic scrub / timelines → GSAP + ScrollTrigger
+- True 3D → React Three Fiber + Drei
+
+## Done criteria
+
+Do not mark the site done, ship, or declare victory if:
+
+- The `premium-web-design` skill was skipped
+- The site lacks genuine WOW or looks merely “nice”
+- Anyone could reasonably call it AI-generated or a generic template
+- There is no real 3D/WebGL experience
+- Scroll effects are limited to opacity/translate reveals
+- The result could pass as another brand after removing the name
+
+Push past “good enough” until the experience feels award-level, brand-true, and unmistakably human-designed.

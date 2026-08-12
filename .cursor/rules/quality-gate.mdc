@@ -1,0 +1,29 @@
+---
+description: Require Lighthouse + visual quality gate before outreach
+alwaysApply: true
+---
+
+# Quality Gate — Hard Requirement
+
+Outreach is forbidden until the site passes the quality gate with decision **SHIP**.
+
+## Required before outreach
+
+1. Run `yarn quality:gate` (writes `quality-gate/report.md` + `quality-gate/lighthouse.json`)
+2. Save screenshots:
+   - `quality-gate/desktop.png`
+   - `quality-gate/mobile.png`
+3. Complete the visual checklist in `quality-gate/report.md`
+4. Commit the quality-gate artifacts
+
+## Pass criteria
+
+- Lighthouse thresholds from the script must pass
+- Site looks stunning with clear WOW (real 3D + scroll storytelling)
+- Site does not look AI-generated
+- Demo preview banner + attribution remain visible
+- Decision line in `quality-gate/report.md` is **SHIP**
+
+## Fail / redo
+
+If decision is **REDO**, fix the site and rerun the full gate. Do not open the outreach issue on a REDO.
