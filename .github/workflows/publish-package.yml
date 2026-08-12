@@ -76,7 +76,7 @@ jobs:
           PACKAGE_NAME: ${{ steps.package.outputs.name }}
           PACKAGE_VERSION: ${{ steps.package.outputs.version }}
 
-      - name: Clear token auth for npm OIDC publish
+      - name: Publish to npm via trusted publishing
         if: steps.npm_state.outputs.should_publish == 'true'
         run: |
           set -euo pipefail
@@ -85,10 +85,10 @@ jobs:
             sed -i.bak '/_authToken/d' "$npmrc" || true
             rm -f "${npmrc}.bak"
           fi
-
-      - name: Publish to npm via trusted publishing
-        if: steps.npm_state.outputs.should_publish == 'true'
-        run: npm publish --provenance --access public --registry https://registry.npmjs.org/
+          unset NODE_AUTH_TOKEN
+          unset NPM_TOKEN
+          npm --version
+          npm publish --provenance --access public --registry https://registry.npmjs.org/
 
       - name: Configure GitHub Packages auth
         run: |
