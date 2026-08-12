@@ -9,7 +9,7 @@ Outreach is forbidden until the site passes the quality gate with decision **SHI
 
 ## Required before outreach
 
-1. Run `yarn quality:gate` (writes `quality-gate/report.md` + `quality-gate/lighthouse.json`)
+1. Run `yarn quality:gate` (runs Lighthouse on **mobile and desktop**, asserts LCP < 2.5s and CLS < 0.1 on both, writes `quality-gate/report.md` + `quality-gate/lighthouse.json`)
 2. Save screenshots:
    - `quality-gate/desktop.png`
    - `quality-gate/mobile.png`
@@ -18,10 +18,15 @@ Outreach is forbidden until the site passes the quality gate with decision **SHI
 
 ## Pass criteria
 
-- Lighthouse thresholds from the script must pass
+- Lighthouse thresholds must pass on **both** the mobile and desktop profiles
+- LCP under 2.5s and CLS under 0.1 on both profiles
+- Primary CTA works on a real mechanism and is reachable in one thumb movement at every scroll position
+- No horizontal overflow at 360px; tap targets at least 44x44px
+- Design tokens authored; JSON-LD, robots.txt, sitemap.xml, favicon, and og-image are real, not template stubs
 - Site looks stunning with clear WOW (real 3D + scroll storytelling)
 - Site does not look AI-generated
 - Demo preview banner + attribution remain visible
+- Third-party imagery is licence-cleared and credited in `CREDITS.md` (pngimg.com assets are CC BY-NC 4.0, non-commercial only)
 - Decision line in `quality-gate/report.md` is **SHIP**
 
 ## Fail / redo

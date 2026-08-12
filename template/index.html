@@ -3,18 +3,56 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- Brand fonts — REQUIRED. Replace the placeholder link with the real faces,
+         then set --font-display / --font-body in src/shared/tokens/theme.css.
+         Keep preconnect above the stylesheet so the LCP text paints fast.
+         Never ship system-ui, Inter, Roboto, or Arial as the brand voice. -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <title>__APP_NAME__ | Mobile-First Starter</title>
+    <!-- <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=__BRAND_FONT_QUERY__&display=swap" /> -->
+
+    <link rel="canonical" href="__SITE_URL__" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="theme-color" content="#16150f" />
+
+    <title>__APP_NAME__</title>
     <meta name="description" content="__SITE_DESCRIPTION__" />
-    <meta property="og:title" content="__APP_NAME__ | Mobile-First Starter" />
+
+    <meta property="og:site_name" content="__APP_NAME__" />
+    <meta property="og:title" content="__APP_NAME__" />
     <meta property="og:description" content="__SITE_DESCRIPTION__" />
     <meta property="og:url" content="__SITE_URL__" />
     <meta property="og:type" content="website" />
+    <meta property="og:locale" content="en_ZA" />
+    <!-- Replace with a real 1200x630 share image before shipping. -->
+    <meta property="og:image" content="__SITE_URL__/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="__APP_NAME__" />
+
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="__APP_NAME__ | Mobile-First Starter" />
+    <meta name="twitter:title" content="__APP_NAME__" />
     <meta name="twitter:description" content="__SITE_DESCRIPTION__" />
+    <meta name="twitter:image" content="__SITE_URL__/og-image.png" />
+
+    <!-- Structured data — REQUIRED before shipping.
+         Author the schema type that actually fits this business and fill every field
+         from real, verified details. For a physical local business that is normally
+         LocalBusiness (or a specific subtype such as Restaurant, HairSalon, Plumber)
+         with name, url, image, telephone, address, geo, openingHoursSpecification,
+         priceRange, and sameAs. Never invent ratings, reviews, or addresses.
+         Validate at https://validator.schema.org/ before calling the site done. -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": "__APP_NAME__",
+        "url": "__SITE_URL__",
+        "description": "__SITE_DESCRIPTION__"
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

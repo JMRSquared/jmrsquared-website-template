@@ -4,20 +4,6 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer components {
-  .section-eyebrow {
-    @apply text-sm font-semibold uppercase tracking-[0.25em] text-primary-600;
-  }
-
-  .section-title {
-    @apply mt-4 text-3xl font-semibold leading-tight text-neutral-950 sm:text-4xl lg:text-5xl;
-  }
-
-  .section-copy {
-    @apply mt-5 text-base leading-8 text-neutral-600;
-  }
-}
-
 @layer base {
   :root {
     color-scheme: light;
@@ -26,15 +12,13 @@
   html {
     overflow-x: hidden;
     scroll-behavior: smooth;
-    background: var(--color-surface-muted);
+    background: var(--color-surface);
   }
 
   body {
     font-family: var(--font-body);
     overflow-x: hidden;
-    background:
-      radial-gradient(circle at top left, rgba(59, 130, 246, 0.08), transparent 28%),
-      linear-gradient(180deg, var(--color-surface) 0%, var(--color-surface-muted) 100%);
+    background: var(--color-surface);
     color: var(--color-text-primary);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
@@ -42,11 +26,6 @@
 
   * {
     box-sizing: border-box;
-  }
-
-  ::selection {
-    background: rgba(59, 130, 246, 0.18);
-    color: var(--color-text-primary);
   }
 
   a {

@@ -1,0 +1,32 @@
+---
+description: Every site needs one obvious primary action, chosen from what the business actually sells
+alwaysApply: true
+---
+
+# Conversion — Hard Requirement
+
+Beautiful with no clear next step is a fail.
+
+## Choose the action from the business
+
+Decide the single primary action from what this business actually sells, then design the whole page around it.
+
+| Business | Primary action |
+| --- | --- |
+| Plumber, locksmith, electrician, tow | Call now |
+| Restaurant, bistro | Book a table |
+| Salon, barber, small trade | WhatsApp |
+| Walk-in shop, showroom | Get directions |
+| Contractor, installer | Request a quote |
+| Takeaway | Order |
+
+This table is a prompt, not a lookup. Read the business and pick what actually converts for it.
+
+## Rules
+
+- The primary CTA must be reachable within one thumb movement at any scroll position on mobile. A persistent bar, dock, or floating action is usually right — decide the pattern from the design, not from habit.
+- Every CTA fires a real mechanism: `tel:`, `https://wa.me/<number>`, a maps deep link, a mailto, or a real booking URL. No dead buttons, no `href="#"`, no fake forms.
+- Label the outcome. "Call the shop", "WhatsApp us", "Book a table" — never "Learn more", "Get started", or "Click here".
+- Secondary actions support the primary one and never compete with it visually.
+- Contact details, address, and opening hours are findable without scrolling the whole page, and match the JSON-LD exactly.
+- Unknown detail → clearly-labelled placeholder plus a line in the outreach issue asking the owner to confirm. Never invent a phone number or address.

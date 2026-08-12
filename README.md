@@ -6,12 +6,13 @@ Published scaffolder for:
 yarn create jmrsquared-website-template
 ```
 
-The generator creates a new Vite website project from the embedded template, rewrites app/deploy settings for Cloudflare Pages (default) or Firebase Hosting, initializes Git, and can prepare GitHub Actions deployment when required CLIs and `gh` are available.
+The generator creates a new Vite website project from the embedded blank template, rewrites app/deploy settings for Cloudflare Pages (default) or Firebase Hosting, initializes Git, and can prepare GitHub Actions deployment when required CLIs and `gh` are available.
 
 ## What It Generates
 
-- React + Vite + TypeScript + Tailwind CSS single-page website
-- Framer Motion + GSAP ScrollTrigger + React Three Fiber / Drei starter motion stack
+- Blank React + Vite + TypeScript + Tailwind CSS single-page website (no starter design)
+- Framer Motion + GSAP ScrollTrigger + React Three Fiber / Drei motion stack installed and ready
+- Design tokens in `src/shared/tokens/theme.css` wired into `tailwind.config.js`
 - Demo preview banner, JMR Squared attribution, and clear unsolicited-demo wording
 - Cloudflare Pages or Firebase Hosting deploy config for `dist`
 - GitHub Actions workflow for provider-based deploys on `main`
@@ -185,11 +186,23 @@ npm now blocks classic automation tokens with `EOTP`. Configure Trusted Publishi
    - Allowed actions: `npm publish`
 4. Save, then push to `main` or run `gh workflow run publish-package.yml`
 
-For a one-off local publish with 2FA:
+### Local publish (working path when CI OIDC fails)
+
+npm redacts `auth/cli` URLs in piped output. Publish needs a **real TTY**, **Dia** as the browser, and an automatic Enter on `Press ENTER to open in the browser...`.
+
+```bash
+yarn publish:local
+```
+
+That script sets `npm config set browser 'open -a Dia'`, runs `expect` around `npm publish`, opens Dia for the auth grant, then checks `npm view`.
+
+Fallback if you already have an authenticator code:
 
 ```bash
 npm publish --access public --otp=<6-digit-code>
 ```
+
+Do **not** scrape `auth/cli/***`, open Safari/Firefox on a truncated link, or use a macOS OTP dialog. Follow skill `npm-local-publish` in `jmrsquared-skills`.
 
 ### Important Notes
 

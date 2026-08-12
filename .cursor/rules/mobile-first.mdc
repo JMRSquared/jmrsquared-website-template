@@ -1,0 +1,28 @@
+---
+description: Mobile-first is a hard requirement — phone view is the real product, mobile Lighthouse gates the ship
+alwaysApply: true
+---
+
+# Mobile-First — Hard Requirement
+
+Visitors reach these businesses on a phone, from a maps listing or a search result. The phone view is the product. Desktop is the secondary case.
+
+## Build order
+
+- Build the mobile layout first, then scale up. Never design desktop and squeeze it down.
+- Keep the WOW on mobile. Cap complexity — fewer particles, lower DPR, simpler camera path — but never fall back to a flat static page.
+
+## Verify at every breakpoint
+
+Scroll the full page at 360x800, 390x844, 768x1024, and 1440x900.
+
+- No horizontal overflow at any width
+- Body copy at 16px or larger
+- Tap targets at least 44x44px with real spacing between them
+- `dvh` rather than `vh` for full-height sections, so the mobile URL bar does not clip the hero
+- Safe-area insets respected on notched devices
+
+## Performance
+
+- Throttle and check the 3D canvas. Below roughly 30fps, reduce the scene until it holds. A stuttering hero is worse than a simpler one.
+- Mobile Lighthouse runs as part of `yarn quality:gate`. A desktop-only pass is not a pass.

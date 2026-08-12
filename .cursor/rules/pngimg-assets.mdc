@@ -1,0 +1,38 @@
+---
+description: Source transparent cutout PNGs via the pngimg-assets skill, under its CC BY-NC licence gate
+alwaysApply: true
+---
+
+# pngimg.com Assets
+
+Cutout imagery (products, food, people, objects, logos) for sites built from this template comes from the `pngimg-assets` skill. No invented placeholders, no hotlinked remote images, no generic AI illustration filler.
+
+**Skill path (canonical):** `/Users/lavhe/CODE/jmrsquared-skills/skills/pngimg-assets/SKILL.md`
+
+```bash
+SKILL=/Users/lavhe/CODE/jmrsquared-skills/skills/pngimg-assets/scripts/pngimg.sh
+"$SKILL" search "barber chair" --limit 10
+"$SKILL" download "barber chair" --index 2 --out public/images
+```
+
+## Licence gate — CC BY-NC 4.0
+
+Check the target before downloading anything.
+
+| Stage | Allowed |
+| --- | --- |
+| Local comps and layout exploration, asset never committed | Yes |
+| Free unsolicited demo carrying `DemoPreviewBanner` + `JmrSquaredAttribution` | Yes, with a `CREDITS.md` entry |
+| Client pays (R150/pm or R4 000 once-off), or any monetised build | **No** — replace every pngimg asset before handover |
+
+Shipped assets need a `CREDITS.md` line with the source URL and a link to https://pngimg.com.
+
+## Usage rules
+
+- Search first, show numbered results, let a human pick. Never blind `--all` on a vague query.
+- Query like a filename: two or three nouns. Empty result → retry with the strongest single noun.
+- Run `file <path>` after download; pngimg mixes 200px thumbnails into full-res sets. Reject undersized assets.
+- Land assets in `public/images/`. Never the repo root, never a temp path referenced from committed code.
+- Optimise before commit. Raw 1–5 MB PNGs break the LCP < 2.5s bar.
+- Sequential downloads only.
+- A cutout supports the design, it does not replace it. A subject floated on a gradient still fails the `premium-web-design` bar.

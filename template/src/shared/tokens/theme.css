@@ -1,40 +1,57 @@
+/*
+ * DESIGN TOKENS — AUTHOR THESE BEFORE SHIPPING.
+ *
+ * The defaults below are deliberately monochrome and unbranded. They exist so an
+ * unstyled build looks obviously unfinished, never like a stock SaaS template.
+ * Shipping a site on these defaults is a quality-gate REDO.
+ *
+ * Replace, at minimum:
+ *   --color-primary-*   brand ramp derived from the real business
+ *   --color-accent-*    supporting ramp, not a second brand blue
+ *   --font-display      real display face, loaded via <link> in index.html
+ *   --font-body         real text face
+ *
+ * Banned as final values: Tailwind default ramps (blue-500 #3b82f6, emerald-500
+ * #10b981, slate), system-ui / Inter / Roboto / Arial as the brand voice.
+ */
+
 :root {
-  /* ── Colors: Primary ── */
-  --color-primary-50: #eff6ff;
-  --color-primary-100: #dbeafe;
-  --color-primary-200: #bfdbfe;
-  --color-primary-300: #93c5fd;
-  --color-primary-400: #60a5fa;
-  --color-primary-500: #3b82f6;
-  --color-primary-600: #2563eb;
-  --color-primary-700: #1d4ed8;
-  --color-primary-800: #1e40af;
-  --color-primary-900: #1e3a8a;
+  /* ── Colors: Primary — PLACEHOLDER ink ramp, replace with the brand ramp ── */
+  --color-primary-50: #f6f6f5;
+  --color-primary-100: #e8e8e6;
+  --color-primary-200: #d2d2ce;
+  --color-primary-300: #b0b0aa;
+  --color-primary-400: #83837c;
+  --color-primary-500: #5c5c56;
+  --color-primary-600: #454540;
+  --color-primary-700: #33332f;
+  --color-primary-800: #232320;
+  --color-primary-900: #141412;
 
-  /* ── Colors: Accent ── */
-  --color-accent-50: #ecfdf5;
-  --color-accent-100: #d1fae5;
-  --color-accent-200: #a7f3d0;
-  --color-accent-300: #6ee7b7;
-  --color-accent-400: #34d399;
-  --color-accent-500: #10b981;
-  --color-accent-600: #059669;
-  --color-accent-700: #047857;
-  --color-accent-800: #065f46;
-  --color-accent-900: #064e3b;
+  /* ── Colors: Accent — PLACEHOLDER ink ramp, replace with a real accent ── */
+  --color-accent-50: #f6f6f5;
+  --color-accent-100: #e8e8e6;
+  --color-accent-200: #d2d2ce;
+  --color-accent-300: #b0b0aa;
+  --color-accent-400: #83837c;
+  --color-accent-500: #5c5c56;
+  --color-accent-600: #454540;
+  --color-accent-700: #33332f;
+  --color-accent-800: #232320;
+  --color-accent-900: #141412;
 
-  /* ── Colors: Neutral ── */
-  --color-neutral-50: #f8fafc;
-  --color-neutral-100: #f1f5f9;
-  --color-neutral-200: #e2e8f0;
-  --color-neutral-300: #cbd5e1;
-  --color-neutral-400: #94a3b8;
-  --color-neutral-500: #64748b;
-  --color-neutral-600: #475569;
-  --color-neutral-700: #334155;
-  --color-neutral-800: #1e293b;
-  --color-neutral-900: #0f172a;
-  --color-neutral-950: #020617;
+  /* ── Colors: Neutral — warm ink, not Tailwind slate ── */
+  --color-neutral-50: #faf9f8;
+  --color-neutral-100: #f2f1ef;
+  --color-neutral-200: #e4e2df;
+  --color-neutral-300: #cbc8c3;
+  --color-neutral-400: #a09c95;
+  --color-neutral-500: #736f68;
+  --color-neutral-600: #55524c;
+  --color-neutral-700: #3d3a35;
+  --color-neutral-800: #262421;
+  --color-neutral-900: #16150f;
+  --color-neutral-950: #0b0a07;
 
   /* ── Semantic Surfaces ── */
   --color-surface: #ffffff;
@@ -54,9 +71,11 @@
   --color-border: var(--color-neutral-200);
   --color-border-muted: var(--color-neutral-100);
 
-  /* ── Typography ── */
-  --font-display: 'Inter', system-ui, sans-serif;
-  --font-body: 'Inter', system-ui, sans-serif;
+  /* ── Typography — PLACEHOLDER. Load real faces in index.html, then set them here. ──
+   * The unset families fall back to Georgia/Charter so an unauthored build reads as
+   * a draft. Never ship system-ui, Inter, Roboto, or Arial as the brand voice. */
+  --font-display: 'BrandDisplayUnset', Georgia, 'Times New Roman', serif;
+  --font-body: 'BrandBodyUnset', Charter, Georgia, serif;
 
   /* ── Border Radius ── */
   --radius-sm: 0.375rem;

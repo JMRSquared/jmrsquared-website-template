@@ -1,0 +1,18 @@
+---
+description: Local npm publish via Dia + TTY expect when releasing create-jmrsquared-website-template
+alwaysApply: false
+globs:
+---
+# npm Local Publish
+
+When releasing this package to npm (or CI Trusted Publishing fails with `ENEEDAUTH` / `EOTP`), follow skill:
+
+`/Users/lavhe/CODE/jmrsquared-skills/skills/npm-local-publish/SKILL.md`
+
+Working command:
+
+```bash
+yarn publish:local
+```
+
+Requires Dia (`open -a Dia`) and `expect`. Approve the npm auth page in Dia. Do not scrape redacted `auth/cli/***` URLs or use macOS OTP dialogs.

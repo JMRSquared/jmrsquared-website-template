@@ -32,8 +32,8 @@ A website is incomplete if any of these are missing:
 | **Stunning craft** | Award-level composition, typography, spacing, color, imagery. Must feel human art-directed, not template-assembled. |
 | **WOW factor** | Moments that stop the user: 3D reveal, scroll-driven camera, interactive demo, morph, or equivalent. Soft fades do not count. |
 | **Anti-AI look** | Zero AI-template tells (see ban list below). A stranger should not guess “this was AI-made.” |
-| **3D / WebGL** | React Three Fiber + Drei are baked into the template. Keep and evolve the hero canvas (or equivalent product scene). Decorative CSS alone does not count. |
-| **Scroll storytelling** | GSAP + ScrollTrigger are baked into the template. Keep and evolve pin/scrub/parallax sequences. Fade-in-on-scroll alone does not count. |
+| **3D / WebGL** | React Three Fiber + Drei are installed. Build a hero canvas (or equivalent product scene). Decorative CSS alone does not count. |
+| **Scroll storytelling** | GSAP + ScrollTrigger are installed. Build pin/scrub/parallax sequences. Fade-in-on-scroll alone does not count. |
 | **Motion craft** | At least 2–3 intentional cinematic or interactive moments beyond basic hover (must appear on the board). |
 | **Mobile** | Keep 3D + scroll WOW on mobile (adapt/cap complexity; do not strip to a flat static page). |
 | **Reduced motion** | Coherent `prefers-reduced-motion` fallbacks that stay polished. |
@@ -51,6 +51,22 @@ A website is incomplete if any of these are missing:
 - Lorem-ish marketing fluff, “empower / unlock / seamless / next-gen” copy without substance
 - Same section recipe repeated: icon + 3 feature cards + purple CTA
 - Any section that cannot cite a board row
+
+## Reference use — transplant, do not copy
+
+Reference sites are look-and-feel sources, not content sources. Transplant the **experience** and rebuild it in the client's world.
+
+A restaurant site may take igloo.inc's scroll-driven hero journey wholesale — same pacing, same camera behaviour, same reveal structure — with every asset, colour, word, and 3D subject swapped for that restaurant. Keep the feel, replace the substance.
+
+Lifting a reference's copy, logo, or literal subject matter is theft. Lifting its craft is the assignment.
+
+## Author the tokens
+
+`src/shared/tokens/theme.css` ships deliberate monochrome placeholder ramps and unset font families so an unauthored build reads as a draft. Shipping on those defaults is a REDO. Load real brand faces through the prepared `<link>` slots in `index.html`, then point `--font-display` and `--font-body` at them.
+
+## Do not rush
+
+Take the time the craft needs. An hour or more of building, scrolling, reviewing, and rebuilding is normal for one site. Run several review-and-fix passes before the quality gate. Shipping early at "good enough" is a worse outcome than taking longer and shipping something stunning.
 
 ## Stack preference
 
