@@ -103,8 +103,9 @@ Every demo must make consent/context obvious:
 
 - Keep `DemoPreviewBanner` visible site-wide
 - Keep `JmrSquaredAttribution` with unsolicited-demo wording, link to https://tech.jmrsquared.com/, and tech@jmrsquared.com
-- Keep `demo-meta.json` accurate (`createdAt`, `takedownAt`, provider, project name, status)
-- Do not remove the demo banner, attribution, or scheduled takedown workflow
+- Do not remove the demo banner or attribution
+
+Takedown is manual. The outreach email still promises removal on request and within 2 weeks; humans handle the actual teardown.
 
 # Company Outreach Email (HARD REQUIREMENT)
 
@@ -119,7 +120,7 @@ Required email points:
 - Demo URL + offer to refine with logo/photos/services/contact details
 - Plain-language SEO offer
 - Pricing: **R150/pm** or **R4 000 once-off**, free maintenance for **2 years**, domain excluded
-- Take down anytime on request; auto take-down in **2 weeks**
+- Promise take-down anytime on request and within **2 weeks** (manual teardown by humans)
 - Close with tech@jmrsquared.com and https://tech.jmrsquared.com/
 
 See `.cursor/rules/company-outreach-email.mdc`.

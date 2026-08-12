@@ -19,11 +19,8 @@ const requiredFiles = [
   'CLAUDE.md',
   'template/AGENTS.md',
   'template/CLAUDE.md',
-  'template/demo-meta.json',
   'template/scripts/quality-gate.mjs',
-  'template/scripts/demo-takedown.mjs',
   'template/_github/workflows/release-website.yml',
-  'template/_github/workflows/demo-takedown.yml',
   'template/src/App.tsx',
   'template/src/shared/components/JmrSquaredAttribution.tsx',
   'template/src/shared/components/DemoPreviewBanner.tsx',
@@ -32,7 +29,7 @@ const requiredFiles = [
   'template/src/features/site-template/components/HeroCanvas.tsx',
   'template/_cursor/rules/jmr-squared-attribution.mdc',
   'template/_cursor/rules/quality-gate.mdc',
-  'template/_cursor/rules/demo-preview-and-takedown.mdc',
+  'template/_cursor/rules/demo-preview.mdc',
 ];
 
 const missingEntries = [];

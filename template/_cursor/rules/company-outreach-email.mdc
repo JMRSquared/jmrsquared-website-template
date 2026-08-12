@@ -17,7 +17,6 @@ After the demo site ships **and** `quality-gate/report.md` says **SHIP**, open a
   1. **Company email** (`To:`) — real address from the brief / research. If none found: `Company email: not found — needs manual lookup`. Never invent one.
   2. Short findings bullets (include quality-gate SHIP + demo URL)
   3. Copy/paste draft email in a `text` fence
-- Also open/update `Demo takedown: <Company> by <takedownAt>`
 - If `gh` fails: write `outreach-email-draft.md` with the same order, commit it, and note the failure
 
 ## Email must cover (keep it short)
@@ -28,7 +27,7 @@ After the demo site ships **and** `quality-gate/report.md` says **SHIP**, open a
 4. Offer to improve once they share missing assets (logo, photos, services, contact details, colours).
 5. Plain-language SEO: helping them show up when people search for what they offer nearby.
 6. Pricing exact: **R150 per month** or **R4 000 once-off**, free maintenance for **2 years**, domain **excluded**.
-7. Takedown: remove anytime on request; auto-remove in **2 weeks** to avoid customer confusion.
+7. Takedown: promise removal anytime on request and within **2 weeks** (humans handle teardown manually; no automation required).
 8. Close with `tech@jmrsquared.com` and `https://tech.jmrsquared.com/`
 
 ## Writing rules
