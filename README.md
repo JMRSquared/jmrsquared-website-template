@@ -45,8 +45,14 @@ During scaffolding:
    - `cloudflare` (default)
    - `firebase`
 4. Enter GitHub repository (`owner/repo`) when prompted.
+5. Provide a project brief (paste markdown, local `.md` path, or URL).
+6. Choose a coding agent:
+   - `agent` (default, Cursor Agent CLI)
+   - `claude`
+   - `pi`
+   - `codex`
 
-The scaffolder creates the app, installs dependencies, initializes git, optionally creates/pushes the GitHub repo, and configures secrets if matching env vars are already set locally.
+After you choose the coding agent, the scaffolder shows the exact command it will run and waits for Enter. From that point it scaffolds the app, installs dependencies, initializes git, creates/pushes the GitHub repo, configures secrets when available, writes an autonomous `/goal` + `/agents-execute` + `/premium-web-design` mission, and launches the selected coding agent. The agent build runs without further prompts.
 
 ## Alternative: Full-Stack Monorepo Template
 
