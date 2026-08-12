@@ -7,16 +7,20 @@ alwaysApply: true
 
 Customer-facing websites in this repo **must** honour the full `premium-web-design` skill. This is non-negotiable.
 
-**Skill path:** `/Users/lavhe/CODE/jmrsquared-skills/.cursor/skills/premium-web-design/SKILL.md`
+**Skill path (canonical):** `/Users/lavhe/CODE/jmrsquared-skills/skills/premium-web-design/SKILL.md`
+
+**Cursor mirror (must match canonical):** `/Users/lavhe/CODE/jmrsquared-skills/.cursor/skills/premium-web-design/SKILL.md`
 
 The site must look **absolutely stunning**, with a clear **WOW factor**, and must **not look AI-generated** in any way. "Pretty good for AI" is a fail.
 
 ## Mandatory before any design or code
 
-1. Invoke and follow `premium-web-design` end to end (`Understand → Study references → Design → Build → Interact → Test → Polish`).
-2. Study the skill’s reference sites in a real browser (igloo.inc, lusion.co, activetheory.net, fizzi, macbook-ui, nimbus-keyboards, apple-iphone14). Do not invent “premium” from memory.
-3. State one line before coding: `Reading this as: <page kind> for <audience>, <vibe>, leaning <direction>.`
-4. Commit to one original art direction for this brand. If the first viewport could belong to another brand after removing the nav, branding is too weak — redesign.
+1. Invoke and follow `premium-web-design` end to end (`Understand → Study references (≥10 board) → Design from board → Build board items → Interact → Test → Polish → Verify board`).
+2. Study the skill’s reference sites in a **real browser** (igloo.inc, lusion.co, activetheory.net, fizzi, macbook-ui, nimbus-keyboards, apple-iphone14). WebFetch alone is not enough. Do not invent “premium” from memory.
+3. Publish a **Reference Study Board** (≥10 attributed craft items, prefer ≥4 source URLs) in chat **before any design or code**. Soft inspiration without a board is a fail.
+4. State one line before coding: `Reading this as: <page kind> for <audience>, <vibe>, leaning <direction>.` Then paste the board.
+5. Compose the entire site from board items adapted to this brand. Every major section must cite ≥1 board row. Orphan sections are not allowed.
+6. If the first viewport could belong to another brand after removing the nav, branding is too weak — redesign.
 
 ## Hard technical bar (ship or fail)
 
@@ -24,12 +28,13 @@ A website is incomplete if any of these are missing:
 
 | Requirement | Minimum |
 | --- | --- |
+| **Reference Study Board** | ≥10 attributed craft items posted before code; final verify with each item marked `SHIPPED` |
 | **Stunning craft** | Award-level composition, typography, spacing, color, imagery. Must feel human art-directed, not template-assembled. |
 | **WOW factor** | Moments that stop the user: 3D reveal, scroll-driven camera, interactive demo, morph, or equivalent. Soft fades do not count. |
 | **Anti-AI look** | Zero AI-template tells (see ban list below). A stranger should not guess “this was AI-made.” |
 | **3D / WebGL** | React Three Fiber + Drei are baked into the template. Keep and evolve the hero canvas (or equivalent product scene). Decorative CSS alone does not count. |
 | **Scroll storytelling** | GSAP + ScrollTrigger are baked into the template. Keep and evolve pin/scrub/parallax sequences. Fade-in-on-scroll alone does not count. |
-| **Motion craft** | At least 2–3 intentional cinematic or interactive moments beyond basic hover. |
+| **Motion craft** | At least 2–3 intentional cinematic or interactive moments beyond basic hover (must appear on the board). |
 | **Mobile** | Keep 3D + scroll WOW on mobile (adapt/cap complexity; do not strip to a flat static page). |
 | **Reduced motion** | Coherent `prefers-reduced-motion` fallbacks that stay polished. |
 
@@ -45,6 +50,7 @@ A website is incomplete if any of these are missing:
 - Dashboard-first marketing layouts; inset hero media cards; tiled collage heroes
 - Lorem-ish marketing fluff, “empower / unlock / seamless / next-gen” copy without substance
 - Same section recipe repeated: icon + 3 feature cards + purple CTA
+- Any section that cannot cite a board row
 
 ## Stack preference
 
@@ -59,6 +65,7 @@ Match the project stack first. Defaults when adding motion/3D:
 Do not mark the site done, ship, or declare victory if:
 
 - The `premium-web-design` skill was skipped
+- No Reference Study Board (≥10) was posted before code, or board items were not verified `SHIPPED`
 - The site lacks genuine WOW or looks merely “nice”
 - Anyone could reasonably call it AI-generated or a generic template
 - There is no real 3D/WebGL experience

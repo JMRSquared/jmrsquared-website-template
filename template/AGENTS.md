@@ -73,18 +73,19 @@ Also enforced by: `.cursor/rules/premium-web-design-hard-requirement.mdc`
 
 ### Non-negotiable delivery bar
 
-- Invoke and follow `premium-web-design` end to end before designing or coding
-- Study the skill’s reference sites in a real browser; do not invent “premium” from memory
+- Invoke and follow `premium-web-design` end to end before designing or coding (`Understand → Study references (≥10 board) → Design from board → Build board items → Interact → Test → Polish → Verify board`)
+- Study the skill’s reference sites in a real browser; publish a **Reference Study Board** (≥10 attributed craft items) before any design or code; do not invent “premium” from memory
+- Compose the entire site from board items; every major section must cite ≥1 board row; verify each item `SHIPPED` at the end
 - **Stunning + WOW** — award-level craft with moments that stop the user; soft fades do not count
 - **Zero AI-template look** — no purple SaaS kits, cream+terracotta clichés, card/pill soup, Inter/Roboto defaults, glassmorphism spam, generic AI illustration heroes, or fluff marketing copy
 - **Mandatory 3D / WebGL** — React Three Fiber + Drei are already in the template; keep and evolve the hero canvas (or equivalent). CSS decoration alone does not count
 - **Mandatory scroll storytelling** — GSAP + ScrollTrigger are already in the template; keep and evolve scrub/pin/parallax sequences. Fade-in-on-scroll alone does not count
-- At least 2–3 intentional cinematic / interactive WOW moments
+- At least 2–3 intentional cinematic / interactive WOW moments (must appear on the board)
 - Preserve full WOW factor on mobile (adapt complexity; do not strip to a flat page)
 - Respect `prefers-reduced-motion` with polished fallbacks
-- Original visual direction appropriate to brand; if the first viewport could belong to another brand after removing the nav, redesign
+- Original brand skin on studied craft; if the first viewport could belong to another brand after removing the nav, redesign
 
-A site without stunning craft, real WOW, real 3D, and scroll-driven motion — or that looks AI-generated — is not done.
+A site without a posted board, stunning craft, real WOW, real 3D, and scroll-driven motion — or that looks AI-generated — is not done.
 
 # Quality Gate (HARD REQUIREMENT)
 
